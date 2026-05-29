@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teleflow • Central de Monitoria Integrada</title>
+  <meta name="description" content="Gerenciamento de chamados em tempo real, triagem integrada e suporte às PAs.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="dark">
+
+  <!-- Toggle de tema -->
+  <button class="theme-toggle" onclick="toggleTheme()" aria-label="Alternar tema">
+    <i id="theme-icon" class="fa-solid fa-sun"></i>
+    <span id="theme-text">Modo Claro</span>
+  </button>
+
+  <!-- Container de notificações -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Modal de detalhe do chamado -->
+  <div id="modal-detalhe-caso" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-titulo-caso">Título do Chamado</h3>
+        <button class="btn-close-modal" onclick="fecharModalCaso()" aria-label="Fechar">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-meta-bar">
+          <span id="modal-op-pa"></span>
+          <span id="modal-timer-status"></span>
+        </div>
+        <div class="modal-description-box" id="modal-descricao-caso"></div>
+
+        <div id="modal-area-tratativa" style="display:none; margin-top:18px;">
+          <div class="input-group">
+            <label><i class="fa-solid fa-reply"></i> Parecer técnico para o operador</label>
+            <textarea id="modal-input-feedback" placeholder="Escreva a orientação detalhada aqui..."></textarea>
+          </div>
+          <button id="modal-btn-finalizar" class="btn-success">
+            <i class="fa-solid fa-check"></i> Finalizar chamado técnico
+          </button>
+        </div>
+
+        <div id="modal-area-resposta-concluida" class="feedback-box" style="display:none; margin-top:14px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       TELA: LOGIN
+       ===================================================================== -->
+  <div id="tela-login" class="screen active">
+    <div class="brand-header">
+      <h2><i class="fa-solid fa-network-wired" style="color:var(--primary);"></i> Teleflow</h2>
+      <p>Gerenciamento de chamados em tempo real, triagem integrada e suporte às PAs.</p>
+    </div>
+
+    <div class="login-container">
+      <div class="login-card">
+        <div>
+          <h3><i class="fa-solid fa-headset" style="color:var(--primary);"></i> Painel do Operador</h3>
+          <p>Envie chamados técnicos estruturados, utilize roteiros rápidos e solicite a presença física do monitor.</p>
+        </div>
+        <button onclick="irPara('tela-operador')">
+          Acessar como operador <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </div>
+
+      <div class="login-card">
+        <div>
+          <h3><i class="fa-solid fa-eye" style="color:var(--success);"></i> Central de Monitoria</h3>
+          <p>Monitore a fila unificada de casos, envie feedbacks em tempo real e atenda chamados críticos.</p>
+        </div>
+        <button onclick="irPara('tela-login-monitor')" class="btn-secondary">
+          Acessar como monitor <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       TELA: LOGIN MONITOR
+       ===================================================================== -->
+  <div id="tela-login-monitor" class="screen">
+    <button class="btn-back" onclick="irPara('tela-login')">
+      <i class="fa-solid fa-arrow-left"></i> Voltar ao início
+    </button>
+    <h3><i class="fa-solid fa-lock" style="color:var(--success);"></i> Autenticação da supervisão</h3>
+    <p style="margin-bottom:18px;">Selecione sua identificação oficial e insira a credencial padrão.</p>
+
+    <div class="input-group">
+      <label>Selecione seu nome</label>
+      <select id="monitor-nome-login">
+        <option value="" disabled selected>Escolha o monitor...</option>
+        <option value="Keyser">Keyser</option>
+        <option value="Ruan">Ruan</option>
+        <option value="Pedro">Pedro</option>
+        <option value="Solon">Solon</option>
+        <option value="Marcos">Marcos</option>
+        <option value="Eduarda">Eduarda</option>
+        <option value="Leonardo">Leonardo</option>
+      </select>
+    </div>
+
+    <div class="input-group">
+      <label>Senha de acesso</label>
+      <input type="password" id="monitor-senha-login" placeholder="Digite a senha padrão">
+    </div>
+
+    <button onclick="loginMonitorMock()" class="btn-success">
+      <i class="fa-solid fa-right-to-bracket"></i> Inicializar console
+    </button>
+  </div>
+
+  <!-- =====================================================================
+       TELA: OPERADOR
+       ===================================================================== -->
+  <div id="tela-operador" class="screen">
+    <div id="form-identificacao">
+      <button class="btn-back" onclick="irPara('tela-login')">
+        <i class="fa-solid fa-arrow-left"></i> Voltar
+      </button>
+      <h2><i class="fa-solid fa-id-card" style="color:var(--primary);"></i> Registro de operador</h2>
+      <p style="margin-bottom:18px;">Insira seu nome e sua posição de atendimento para conectar-se à fila unificada.</p>
+
+      <div class="input-group">
+        <label>Nome do operador</label>
+        <input type="text" id="op-nome" placeholder="Seu nome">
+      </div>
+      <div class="input-group">
+        <label>Número da sua PA</label>
+        <input type="text" id="op-pa" inputmode="numeric" placeholder="Ex: 15">
+      </div>
+      <button onclick="iniciarSessaoOperadorMock()">Autenticar no sistema</button>
+    </div>
+
+    <div id="area-operador" style="display:none;">
+      <div class="user-info-bar">
+        <h2 style="margin:0; font-size:1.2rem;">
+          <i class="fa-solid fa-headset" style="color:var(--primary);"></i> Terminal do operador
+        </h2>
+        <button onclick="limparSessaoESairMock()" class="btn-back" style="margin:0;">
+          <i class="fa-solid fa-right-from-bracket"></i> Logoff
+        </button>
+      </div>
+
+      <div class="user-info-bar">
+        <div>
+          <span><i class="fa-solid fa-user"></i> <strong id="txt-op-nome"></strong></span>
+          &nbsp;•&nbsp;
+          <span><i class="fa-solid fa-desktop"></i> <strong id="txt-op-pa"></strong></span>
+        </div>
+        <div id="container-botoes-urgencia">
+          <button id="btn-chamar-monitor" onclick="chamarMonitorMock()" class="btn-danger" style="width:auto;">
+            <i class="fa-solid fa-bell"></i> Solicitar monitor na PA
+          </button>
+        </div>
+      </div>
+
+      <div id="alerta-suporte-operador" style="display:none; margin-bottom:14px;"></div>
+
+      <div class="monitors-status-wrapper">
+        <label style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
+          <i class="fa-solid fa-users-viewfinder"></i> Equipe de monitoria online
+        </label>
+        <div class="monitors-grid" id="grid-monitores-online"></div>
+      </div>
+
+      <div class="shortcuts-wrapper">
+        <label style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
+          <i class="fa-solid fa-bolt"></i> Roteiros rápidos
+        </label>
+        <div class="shortcuts-container">
+          <button class="btn-shortcut" onclick="aplicarScript('erroAgendamento')">Erro de agendamento</button>
+          <button class="btn-shortcut" onclick="aplicarScript('desbloqueio')">Desbloqueio</button>
+          <button class="btn-shortcut" onclick="aplicarScript('telefonia')">Telefonia</button>
+          <button class="btn-shortcut" onclick="aplicarScript('cancelamento')">Cancelamento não efetuado</button>
+          <button class="btn-shortcut" onclick="aplicarScript('transferencia')">Autorização de transferência</button>
+          <button class="btn-shortcut" onclick="aplicarScript('fatura')">Correção de fatura</button>
+          <button class="btn-shortcut" onclick="aplicarScript('desconto')">Desconto autorizado</button>
+        </div>
+      </div>
+
+      <input type="hidden" id="caso-id-edicao" value="">
+
+      <div class="input-group">
+        <label id="label-status-formulario">Assunto / título do caso</label>
+        <input type="text" id="caso-titulo" placeholder="Ex: Falha sistêmica na integração de dados">
+      </div>
+
+      <div class="input-group">
+        <label><i class="fa-solid fa-user-tag"></i> Direcionar para monitor (opcional)</label>
+        <select id="caso-monitor-direcionado">
+          <option value="">Disponibilizar para todos (geral)</option>
+          <option value="Keyser">Keyser</option>
+          <option value="Ruan">Ruan</option>
+          <option value="Pedro">Pedro</option>
+          <option value="Solon">Solon</option>
+          <option value="Marcos">Marcos</option>
+          <option value="Eduarda">Eduarda</option>
+          <option value="Leonardo">Leonardo</option>
+        </select>
+      </div>
+
+      <div class="input-group">
+        <label>Descrição detalhada do caso</label>
+        <textarea id="caso-descricao" placeholder="Insira o texto técnico aqui..."></textarea>
+      </div>
+
+      <button id="btn-enviar-chamado" onclick="enviarCasoMock()" class="btn-success" style="margin-bottom:24px;">
+        <i class="fa-solid fa-paper-plane"></i> Transmitir para fila de triagem
+      </button>
+
+      <h3><i class="fa-solid fa-clock-rotate-left"></i> Seus chamados recentes</h3>
+      <div id="lista-casos-operador" class="grid-cards-container"></div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       TELA: MONITOR
+       ===================================================================== -->
+  <div id="tela-monitor" class="screen monitor-screen-wide">
+    <div class="user-info-bar">
+      <h2 style="margin:0; font-size:1.2rem;">
+        <i class="fa-solid fa-eye" style="color:var(--success);"></i> Console do supervisor
+      </h2>
+      <button onclick="deslogarMonitorMock()" class="btn-back" style="margin:0;">
+        <i class="fa-solid fa-right-from-bracket"></i> Desconectar
+      </button>
+    </div>
+
+    <div class="user-info-bar">
+      <span id="txt-nome-monitor-logado"></span>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:0.8rem; color:var(--text-muted);">Status:</span>
+        <div class="status-selector">
+          <button id="status-opt-disp" class="status-opt active-disp" onclick="alterarStatusMonitorMock('Disponível')">Disponível</button>
+          <button id="status-opt-np" class="status-opt" onclick="alterarStatusMonitorMock('Não Perturbe')">Pausa técnica</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-stats-compact">
+      <div class="stat-box-compact">
+        <span class="stat-label-compact">Aguardando triagem:</span>
+        <span class="stat-value-compact" id="stat-pendentes">0</span>
+      </div>
+      <div class="stat-box-compact">
+        <span class="stat-label-compact">Concluídos hoje:</span>
+        <span class="stat-value-compact" id="stat-concluidos" style="color:var(--success);">0</span>
+      </div>
+    </div>
+
+    <div id="painel-emergencias" class="emergency-panel" style="display:none;">
+      <h3><i class="fa-solid fa-circle-exclamation"></i> Chamados presenciais nas PAs</h3>
+      <div id="lista-emergencias" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+
+    <div class="filter-bar">
+      <div style="flex:1;">
+        <input type="text" id="search-input" oninput="renderizarTudo()" placeholder="🔍  Pesquisar por operador, PA ou descrição...">
+      </div>
+      <div style="min-width:240px;">
+        <select id="filter-direcionamento" onchange="renderizarTudo()">
+          <option value="Todos">Visualizar todos os casos</option>
+          <option value="Meus">Visualizar atribuídos a mim</option>
+        </select>
+        <select id="filter-status" onchange="renderizarTudo()">
+          <option value="Todos">Exibir todos os status</option>
+          <option value="Pendente">Fila de espera (pendentes)</option>
+          <option value="Em Verificação">Em tratativa técnica</option>
+          <option value="Concluído">Histórico concluído</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section-monitor-fluid">
+      <h3><i class="fa-solid fa-tray" style="color:var(--primary);"></i> Fila unificada de atendimento</h3>
+      <div id="lista-casos-monitor" class="grid-cards-container"></div>
+    </div>
+
+    <div class="section-monitor-fluid archive-section">
+      <div class="archive-header" onclick="toggleArquivoRetratil()">
+        <h3><i class="fa-solid fa-box-archive" style="color:var(--text-muted);"></i> Histórico de casos solucionados (<span id="count-arquivados">0</span>)</h3>
+        <i id="archive-arrow" class="fa-solid fa-chevron-down"></i>
+      </div>
+      <div id="container-arquivo-retratil" class="archive-body-content">
+        <div id="lista-casos-concluidos-monitor" class="grid-cards-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       FIREBASE REALTIME
+       ===================================================================== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCL-BcrJiSykTf3wuhE8h1vYoL88eHYqmE",
+      authDomain: "suppaciente.firebaseapp.com",
+      databaseURL: "https://suppaciente-default-rtdb.firebaseio.com",
+      projectId: "suppaciente",
+      storageBucket: "suppaciente.firebasestorage.app",
+      messagingSenderId: "191120541769",
+      appId: "1:191120541769:web:9f2c8715ba1844e6ebd798"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    window.fbDB = db;
+    window.fbRef = ref;
+    window.fbSet = set;
+    window.fbOnValue = onValue;
+
+    if (typeof window.inicializarSincronismoFirebase === "function") {
+      window.inicializarSincronismoFirebase();
+    }
+  </script>
+
+  <script src="script.js"></script>
+</body>
+</html>
