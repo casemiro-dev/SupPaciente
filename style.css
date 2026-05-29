@@ -808,3 +808,15 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
   border: 2px solid var(--bg);
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Assinatura da tela de login */
+.login-signature {
+  margin-top: 3rem;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
