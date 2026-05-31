@@ -30,6 +30,11 @@ let idCasoModalAberto = null;
 let heartbeatTimer = null;
 let limpezaTimer = null;
 
+// PROTEÇÃO ANTI-PERDA DE DADOS: só permite escrita no Firebase
+// depois que o primeiro snapshot tiver sido carregado.
+let firebaseCarregado = false;
+const filaPosCarga = [];
+
 let operadorSessao = JSON.parse(sessionStorage.getItem("teleflow_op_session"))    || null;
 let monitorSessao  = JSON.parse(sessionStorage.getItem("teleflow_mon_session"))   || null;
 let adminSessao    = JSON.parse(sessionStorage.getItem("teleflow_admin_session")) || null;
@@ -67,6 +72,14 @@ window.inicializarSincronismoFirebase = function () {
     }
     controleTamanhoAntigo.notif = localDB.notificacoes.length;
 
+    // Libera escritas só após o primeiro carregamento real
+    if (!firebaseCarregado) {
+      firebaseCarregado = true;
+      while (filaPosCarga.length) {
+        try { filaPosCarga.shift()(); } catch (e) { console.error(e); }
+      }
+    }
+
     window.renderizarTudo();
     if (idCasoModalAberto) window.atualizarApenasTempoEStatusModal();
   });
@@ -74,6 +87,12 @@ window.inicializarSincronismoFirebase = function () {
 
 window.sincronizarStorage = function () {
   if (!window.fbDB) return;
+  // SALVAGUARDA CRÍTICA: nunca sobrescrever o Firebase antes do
+  // primeiro snapshot chegar — senão apagaríamos todos os dados.
+  if (!firebaseCarregado) {
+    console.warn("[Sincronismo] Escrita ignorada: Firebase ainda não carregou.");
+    return;
+  }
   window.fbSet(window.fbRef(window.fbDB, "teleflow_root"), {
     casos:            localDB.casos.reduce((a, c) => ({ ...a, [c.id]: c }), {}),
     alertas_pa:       localDB.alertas_pa.reduce((a, x) => ({ ...a, [x.id]: x }), {}),
@@ -81,6 +100,12 @@ window.sincronizarStorage = function () {
     notificacoes:     localDB.notificacoes.reduce((a, n) => ({ ...a, [n.id]: n }), {}),
   });
 };
+
+// Executa uma função assim que o Firebase tiver carregado (ou imediatamente)
+function aposFirebaseCarregar(fn) {
+  if (firebaseCarregado) fn();
+  else filaPosCarga.push(fn);
+}
 
 // --------------------------------------------------------------------------
 // NAVEGAÇÃO / HELPERS
@@ -222,13 +247,23 @@ window.addEventListener("beforeunload", () => {
 // LIMPEZA DIÁRIA À MEIA-NOITE
 // --------------------------------------------------------------------------
 function verificarLimpezaDiaria() {
+  // Só roda DEPOIS que o Firebase tiver carregado os dados reais.
+  // Caso contrário poderíamos sobrescrever o DB com lista vazia.
+  if (!firebaseCarregado) return;
+
   const hoje = new Date().toDateString();
   const ultima = localStorage.getItem(CHAVE_ULTIMA_LIMPEZA);
   if (ultima === hoje) return;
 
-  // Só executa se já estivermos depois de 00h e ainda não rodou hoje
+  // Apaga APENAS casos concluídos antes do início do dia de hoje.
+  // Casos concluídos hoje permanecem visíveis até a próxima madrugada.
+  const inicioHoje = new Date(); inicioHoje.setHours(0,0,0,0);
   const antes = localDB.casos.length;
-  localDB.casos = localDB.casos.filter(c => c.status !== "Concluído");
+  localDB.casos = localDB.casos.filter(c => {
+    if (c.status !== "Concluído") return true;
+    const quando = c.concluidoEm || c.timestamp || 0;
+    return quando >= inicioHoje.getTime();
+  });
 
   // Limpa também notificações expiradas (> NOTIF_EXPIRACAO_MS)
   const agora = Date.now();
@@ -237,7 +272,7 @@ function verificarLimpezaDiaria() {
 
   if (antes !== localDB.casos.length || notifAntes !== localDB.notificacoes.length) {
     window.sincronizarStorage();
-    console.log(`[Limpeza diária] ${antes - localDB.casos.length} casos concluídos removidos, ${notifAntes - localDB.notificacoes.length} notificações expiradas.`);
+    console.log(`[Limpeza diária] ${antes - localDB.casos.length} casos antigos removidos, ${notifAntes - localDB.notificacoes.length} notificações expiradas.`);
   }
   localStorage.setItem(CHAVE_ULTIMA_LIMPEZA, hoje);
 }
@@ -1016,11 +1051,14 @@ window.addEventListener("DOMContentLoaded", () => {
     if (optDisp) optDisp.className = monitorSessao.status === "Disponível" ? "status-opt active-disp" : "status-opt";
     if (optNp) optNp.className = monitorSessao.status === "Não Perturbe" ? "status-opt active-np" : "status-opt";
 
-    // Re-registra no DB caso a sessão estivesse persistida
-    if (!localDB.monitores_online.find(m => m.id === monitorSessao.id)) {
-      localDB.monitores_online.push({ id: monitorSessao.id, nome: monitorSessao.nome, status: monitorSessao.status, lastSeen: Date.now() });
-      window.sincronizarStorage();
-    }
+    // Re-registra no DB SOMENTE depois que o Firebase tiver carregado,
+    // para não sobrescrever a base com lista vazia (bug que apagava casos).
+    aposFirebaseCarregar(() => {
+      if (!localDB.monitores_online.find(m => m.id === monitorSessao.id)) {
+        localDB.monitores_online.push({ id: monitorSessao.id, nome: monitorSessao.nome, status: monitorSessao.status, lastSeen: Date.now() });
+        window.sincronizarStorage();
+      }
+    });
     iniciarHeartbeat();
     window.irPara("tela-monitor");
   }
