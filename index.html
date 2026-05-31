@@ -28,9 +28,14 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="modal-titulo-caso">Título do Chamado</h3>
-        <button class="btn-close-modal" onclick="fecharModalCaso()" aria-label="Fechar">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
+        <div class="modal-header-actions">
+          <button class="btn-icon-copy" onclick="copiarConteudoCasoModal()" aria-label="Copiar conteúdo" title="Copiar título e descrição">
+            <i class="fa-regular fa-copy"></i>
+          </button>
+          <button class="btn-close-modal" onclick="fecharModalCaso()" aria-label="Fechar">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
       </div>
       <div class="modal-body">
         <div class="modal-meta-bar">
@@ -85,7 +90,12 @@
       </div>
     </div>
 
-    <p class="login-signature">Developed by Casemiro Alves &amp; Pedro Henrique</p>
+    <p class="login-signature">
+      Developed by Casemiro Alves &amp; Pedro Henrique
+      <button class="admin-access-link" onclick="irPara('tela-login-admin')" title="Acesso administrativo">
+        <i class="fa-solid fa-user-shield"></i>
+      </button>
+    </p>
   </div>
 
 
@@ -124,6 +134,115 @@
   </div>
 
   <!-- =====================================================================
+       TELA: LOGIN ADMIN
+       ===================================================================== -->
+  <div id="tela-login-admin" class="screen">
+    <button class="btn-back" onclick="irPara('tela-login')">
+      <i class="fa-solid fa-arrow-left"></i> Voltar ao início
+    </button>
+    <h3><i class="fa-solid fa-user-shield" style="color:var(--primary);"></i> Painel Administrativo</h3>
+    <p style="margin-bottom:18px;">Área restrita. Acesso exclusivo para administração.</p>
+
+    <div class="input-group">
+      <label>Senha administrativa</label>
+      <input type="password" id="admin-senha-login" placeholder="Digite a senha" onkeydown="if(event.key==='Enter')loginAdminMock()">
+    </div>
+
+    <button onclick="loginAdminMock()">
+      <i class="fa-solid fa-right-to-bracket"></i> Acessar painel
+    </button>
+  </div>
+
+  <!-- =====================================================================
+       TELA: ADMIN
+       ===================================================================== -->
+  <div id="tela-admin" class="screen monitor-screen-wide">
+    <div class="user-info-bar">
+      <h2 style="margin:0; font-size:1.2rem;">
+        <i class="fa-solid fa-user-shield" style="color:var(--primary);"></i> Painel Administrativo
+      </h2>
+      <button onclick="deslogarAdminMock()" class="btn-back" style="margin:0;">
+        <i class="fa-solid fa-right-from-bracket"></i> Sair
+      </button>
+    </div>
+
+    <div class="admin-tabs">
+      <button class="admin-tab active" data-tab="relatorios" onclick="trocarAbaAdmin('relatorios')">
+        <i class="fa-solid fa-chart-column"></i> Relatórios
+      </button>
+      <button class="admin-tab" data-tab="monitores" onclick="trocarAbaAdmin('monitores')">
+        <i class="fa-solid fa-users-viewfinder"></i> Monitores online
+      </button>
+      <button class="admin-tab" data-tab="notificacoes" onclick="trocarAbaAdmin('notificacoes')">
+        <i class="fa-solid fa-bullhorn"></i> Notificações
+      </button>
+    </div>
+
+    <!-- Aba: Relatórios -->
+    <div class="admin-tab-content active" id="admin-aba-relatorios">
+      <div class="report-controls">
+        <div class="input-group" style="margin:0; flex:1; min-width:200px;">
+          <label>Período</label>
+          <select id="report-periodo" onchange="renderizarRelatorios()">
+            <option value="semana">Últimos 7 dias</option>
+            <option value="mes">Últimos 30 dias</option>
+            <option value="hoje">Hoje</option>
+            <option value="tudo">Histórico completo</option>
+          </select>
+        </div>
+        <button onclick="exportarRelatorioCSV()" class="btn-secondary" style="width:auto; align-self:flex-end;">
+          <i class="fa-solid fa-download"></i> Exportar CSV
+        </button>
+      </div>
+
+      <div class="dashboard-stats-compact" id="report-stats-gerais"></div>
+
+      <div class="section-monitor-fluid">
+        <h3><i class="fa-solid fa-ranking-star" style="color:var(--primary);"></i> Desempenho por monitor</h3>
+        <div id="report-tabela-monitores" class="report-table-wrapper"></div>
+      </div>
+    </div>
+
+    <!-- Aba: Monitores online -->
+    <div class="admin-tab-content" id="admin-aba-monitores">
+      <div class="section-monitor-fluid">
+        <h3><i class="fa-solid fa-signal" style="color:var(--success);"></i> Monitores conectados agora</h3>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+          Use o botão de força para remover sessões fantasmas que continuam aparecendo como online.
+        </p>
+        <div id="admin-lista-monitores" class="grid-cards-container"></div>
+      </div>
+    </div>
+
+    <!-- Aba: Notificações -->
+    <div class="admin-tab-content" id="admin-aba-notificacoes">
+      <div class="section-monitor-fluid">
+        <h3><i class="fa-solid fa-paper-plane" style="color:var(--primary);"></i> Enviar comunicado aos operadores</h3>
+
+        <div class="input-group">
+          <label>Tipo de mensagem</label>
+          <select id="admin-notif-tipo">
+            <option value="info">Informativo</option>
+            <option value="success">Confirmação / aviso positivo</option>
+            <option value="warning">Atenção</option>
+            <option value="danger">Crítico / urgente</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Mensagem (até 280 caracteres)</label>
+          <textarea id="admin-notif-msg" maxlength="280" placeholder="Ex: Sistema do CRM ficará indisponível das 14h às 14h30 para manutenção."></textarea>
+        </div>
+        <button onclick="enviarNotificacaoAdminMock()" class="btn-success">
+          <i class="fa-solid fa-bullhorn"></i> Transmitir para todos os operadores
+        </button>
+
+        <h3 style="margin-top:28px;"><i class="fa-solid fa-clock-rotate-left"></i> Comunicados recentes</h3>
+        <div id="admin-lista-notificacoes" class="notif-history"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
        TELA: OPERADOR
        ===================================================================== -->
   <div id="tela-operador" class="screen">
@@ -154,6 +273,9 @@
           <i class="fa-solid fa-right-from-bracket"></i> Logoff
         </button>
       </div>
+
+      <!-- Comunicados do admin -->
+      <div id="operador-comunicados" class="op-comunicados" style="display:none;"></div>
 
       <div class="user-info-bar">
         <div>
@@ -306,7 +428,7 @@
        ===================================================================== -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+    import { getDatabase, ref, set, remove, onValue, onDisconnect, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCL-BcrJiSykTf3wuhE8h1vYoL88eHYqmE",
@@ -324,7 +446,10 @@
     window.fbDB = db;
     window.fbRef = ref;
     window.fbSet = set;
+    window.fbRemove = remove;
     window.fbOnValue = onValue;
+    window.fbOnDisconnect = onDisconnect;
+    window.fbUpdate = update;
 
     if (typeof window.inicializarSincronismoFirebase === "function") {
       window.inicializarSincronismoFirebase();
