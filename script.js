@@ -1,24 +1,29 @@
 /* ==========================================================================
-   Teleflow • v5.0
-   Novidades:
-   - Botão de copiar conteúdo no modal
-   - Heartbeat de presença (corrige monitor fantasma)
-   - Painel administrativo (relatórios + força logout + notificações)
-   - Limpeza automática diária de casos concluídos
+   Teleflow • v6.0
+   Mudanças desta versão:
+   - REMOVIDA limpeza automática de casos. Nada mais é apagado sozinho.
+   - Admin: botão "Baixar JSON do período" (substitui o CSV).
+   - Admin: nova aba "Manutenção" para apagar manualmente apenas os
+     concluídos por período (hoje / 7d / 30d / tudo).
+   - Operador: sino de notificações com modal expansível. Dispensa é
+     SEMPRE local (localStorage), nunca apaga do banco.
+   - Monitor: sessões por aba (multi-PC). Logoff em uma aba não derruba
+     as outras. Heartbeat se re-insere caso outra sessão tenha removido.
+   - "Pausa técnica" virou "Indisponível" em vermelho.
+   - Tela de Relatórios: tabela alinhada corretamente.
+   - Enter funciona em todas as telas de login.
    ========================================================================== */
 
-console.log("Teleflow v5.0 • Realtime + Admin + Heartbeat");
+console.log("Teleflow v6.0 • Sino + Multi-sessão + Limpeza manual");
 
 // --------------------------------------------------------------------------
 // CONFIG
 // --------------------------------------------------------------------------
-const ADMIN_PASSWORD       = "casemiro2026";   // troque se quiser
-const MONITOR_PASSWORD     = null;              // null = aceita qualquer senha (mantém comportamento atual)
-const HEARTBEAT_INTERVALO  = 25_000;            // 25 segundos
-const HEARTBEAT_EXPIRACAO  = 75_000;            // 75 segundos sem heartbeat = offline
-const NOTIF_EXPIRACAO_MS   = 6 * 60 * 60 * 1000; // notificações duram 6h
-const CHAVE_NOTIF_LIDAS    = "teleflow_notif_dismissed";
-const CHAVE_ULTIMA_LIMPEZA = "teleflow_last_cleanup_day";
+const ADMIN_PASSWORD       = "casemiro2026";
+const MONITOR_PASSWORD     = null;              // null = aceita qualquer senha
+const HEARTBEAT_INTERVALO  = 25_000;            // 25 s
+const HEARTBEAT_EXPIRACAO  = 75_000;            // 75 s sem heartbeat = offline
+const CHAVE_NOTIF_LIDAS    = "teleflow_notif_dismissed"; // local-only
 
 // --------------------------------------------------------------------------
 // ESTADO
@@ -28,10 +33,8 @@ let controleTamanhoAntigo = { alertas: 0, notif: 0 };
 let arquivoAberto = false;
 let idCasoModalAberto = null;
 let heartbeatTimer = null;
-let limpezaTimer = null;
 
-// PROTEÇÃO ANTI-PERDA DE DADOS: só permite escrita no Firebase
-// depois que o primeiro snapshot tiver sido carregado.
+// Proteção: só permite escrita no Firebase após o primeiro snapshot.
 let firebaseCarregado = false;
 const filaPosCarga = [];
 
@@ -54,7 +57,7 @@ window.inicializarSincronismoFirebase = function () {
     localDB.monitores_online  = dados?.monitores_online  ? Object.values(dados.monitores_online)  : [];
     localDB.notificacoes      = dados?.notificacoes      ? Object.values(dados.notificacoes)      : [];
 
-    // Notificação visual: novo alerta presencial
+    // Alerta presencial novo
     if (localDB.alertas_pa.length > controleTamanhoAntigo.alertas) {
       const ultimo = localDB.alertas_pa[localDB.alertas_pa.length - 1];
       if (ultimo && ultimo.status === "Aguardando" && monitorSessao) {
@@ -65,14 +68,13 @@ window.inicializarSincronismoFirebase = function () {
     }
     controleTamanhoAntigo.alertas = localDB.alertas_pa.length;
 
-    // Notificação visual: novo comunicado admin para operadores
+    // Novo comunicado admin para operador
     if (operadorSessao && localDB.notificacoes.length > controleTamanhoAntigo.notif && controleTamanhoAntigo.notif > 0) {
       const ultima = [...localDB.notificacoes].sort((a,b) => b.timestamp - a.timestamp)[0];
-      if (ultima) window.lancarToast(`📢 Comunicado: ${ultima.mensagem}`, ultima.tipo || "info");
+      if (ultima) window.lancarToast(`📢 Novo comunicado: ${ultima.titulo || ultima.mensagem}`, ultima.tipo || "info");
     }
     controleTamanhoAntigo.notif = localDB.notificacoes.length;
 
-    // Libera escritas só após o primeiro carregamento real
     if (!firebaseCarregado) {
       firebaseCarregado = true;
       while (filaPosCarga.length) {
@@ -87,8 +89,6 @@ window.inicializarSincronismoFirebase = function () {
 
 window.sincronizarStorage = function () {
   if (!window.fbDB) return;
-  // SALVAGUARDA CRÍTICA: nunca sobrescrever o Firebase antes do
-  // primeiro snapshot chegar — senão apagaríamos todos os dados.
   if (!firebaseCarregado) {
     console.warn("[Sincronismo] Escrita ignorada: Firebase ainda não carregou.");
     return;
@@ -101,7 +101,6 @@ window.sincronizarStorage = function () {
   });
 };
 
-// Executa uma função assim que o Firebase tiver carregado (ou imediatamente)
 function aposFirebaseCarregar(fn) {
   if (firebaseCarregado) fn();
   else filaPosCarga.push(fn);
@@ -182,23 +181,52 @@ window.aplicarScript = function (tipo) {
 };
 
 // --------------------------------------------------------------------------
-// HEARTBEAT MONITOR (corrige fantasmas)
+// MULTI-SESSÃO DO MONITOR + HEARTBEAT
 // --------------------------------------------------------------------------
-function getMonitoresAtivosFiltrados() {
+/**
+ * Lista de monitores únicos por nome, ativos (com heartbeat válido).
+ * Status agregado: se qualquer sessão estiver "Disponível", o monitor
+ * aparece como Disponível; se TODAS as sessões estiverem em "Não Perturbe",
+ * aparece como Indisponível.
+ */
+function getMonitoresAtivosUnicos() {
   const agora = Date.now();
-  return localDB.monitores_online.filter(m =>
+  const ativos = localDB.monitores_online.filter(m =>
     !m.lastSeen || (agora - m.lastSeen) < HEARTBEAT_EXPIRACAO
   );
+  const porNome = new Map();
+  ativos.forEach(m => {
+    const atual = porNome.get(m.nome);
+    if (!atual) {
+      porNome.set(m.nome, { nome: m.nome, status: m.status || "Disponível", sessoes: 1 });
+    } else {
+      atual.sessoes++;
+      if (m.status === "Disponível") atual.status = "Disponível";
+    }
+  });
+  return Array.from(porNome.values());
 }
 
 function dispararHeartbeat() {
   if (!monitorSessao) return;
-  const idx = localDB.monitores_online.findIndex(m => m.id === monitorSessao.id);
-  if (idx !== -1) {
-    localDB.monitores_online[idx].lastSeen = Date.now();
-    localDB.monitores_online[idx].status   = monitorSessao.status;
+  aposFirebaseCarregar(() => {
+    const idx = localDB.monitores_online.findIndex(m => m.id === monitorSessao.id);
+    if (idx === -1) {
+      // Outra sessão removeu — re-insere a minha
+      localDB.monitores_online.push({
+        id: monitorSessao.id,
+        sessionId: monitorSessao.sessionId,
+        nome: monitorSessao.nome,
+        status: monitorSessao.status,
+        lastSeen: Date.now(),
+      });
+    } else {
+      localDB.monitores_online[idx].lastSeen = Date.now();
+      localDB.monitores_online[idx].status   = monitorSessao.status;
+      localDB.monitores_online[idx].nome     = monitorSessao.nome;
+    }
     window.sincronizarStorage();
-  }
+  });
 }
 
 function iniciarHeartbeat() {
@@ -211,13 +239,9 @@ function pararHeartbeat() {
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
 }
 
-function removerMonitorDoDB(monitorId) {
-  localDB.monitores_online = localDB.monitores_online.filter(m => m.id !== monitorId);
-  window.sincronizarStorage();
-}
-
-// Limpeza periódica de fantasmas (qualquer cliente conectado executa)
+// Limpeza periódica APENAS de sessões fantasmas (sem heartbeat) — nunca de casos.
 setInterval(() => {
+  if (!firebaseCarregado) return;
   const agora = Date.now();
   const ativos = localDB.monitores_online.filter(m =>
     !m.lastSeen || (agora - m.lastSeen) < HEARTBEAT_EXPIRACAO
@@ -229,63 +253,15 @@ setInterval(() => {
   window.renderizarTudo();
 }, 30_000);
 
-// Encerra heartbeat e remove monitor ao fechar a aba
+// Ao fechar a aba: remove apenas a sessão DESTA aba (não derruba outras)
 window.addEventListener("beforeunload", () => {
-  if (monitorSessao) {
-    localDB.monitores_online = localDB.monitores_online.filter(m => m.id !== monitorSessao.id);
-    if (window.fbDB) {
-      // tentativa síncrona/best-effort
-      try {
-        window.fbSet(window.fbRef(window.fbDB, "teleflow_root/monitores_online"),
-          localDB.monitores_online.reduce((a, m) => ({ ...a, [m.id]: m }), {}));
-      } catch (e) {}
-    }
-  }
+  if (!monitorSessao || !window.fbDB) return;
+  try {
+    const restantes = localDB.monitores_online.filter(m => m.id !== monitorSessao.id);
+    window.fbSet(window.fbRef(window.fbDB, "teleflow_root/monitores_online"),
+      restantes.reduce((a, m) => ({ ...a, [m.id]: m }), {}));
+  } catch (e) {}
 });
-
-// --------------------------------------------------------------------------
-// LIMPEZA DIÁRIA À MEIA-NOITE
-// --------------------------------------------------------------------------
-function verificarLimpezaDiaria() {
-  // Só roda DEPOIS que o Firebase tiver carregado os dados reais.
-  // Caso contrário poderíamos sobrescrever o DB com lista vazia.
-  if (!firebaseCarregado) return;
-
-  const hoje = new Date().toDateString();
-  const ultima = localStorage.getItem(CHAVE_ULTIMA_LIMPEZA);
-  if (ultima === hoje) return;
-
-  // Apaga APENAS casos concluídos antes do início do dia de hoje.
-  // Casos concluídos hoje permanecem visíveis até a próxima madrugada.
-  const inicioHoje = new Date(); inicioHoje.setHours(0,0,0,0);
-  const antes = localDB.casos.length;
-  localDB.casos = localDB.casos.filter(c => {
-    if (c.status !== "Concluído") return true;
-    const quando = c.concluidoEm || c.timestamp || 0;
-    return quando >= inicioHoje.getTime();
-  });
-
-  // Limpa também notificações expiradas (> NOTIF_EXPIRACAO_MS)
-  const agora = Date.now();
-  const notifAntes = localDB.notificacoes.length;
-  localDB.notificacoes = localDB.notificacoes.filter(n => (agora - n.timestamp) < NOTIF_EXPIRACAO_MS);
-
-  if (antes !== localDB.casos.length || notifAntes !== localDB.notificacoes.length) {
-    window.sincronizarStorage();
-    console.log(`[Limpeza diária] ${antes - localDB.casos.length} casos antigos removidos, ${notifAntes - localDB.notificacoes.length} notificações expiradas.`);
-  }
-  localStorage.setItem(CHAVE_ULTIMA_LIMPEZA, hoje);
-}
-
-function agendarLimpezaProximaMeiaNoite() {
-  const agora = new Date();
-  const amanha = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 1, 0, 0, 5);
-  const msAteMeiaNoite = amanha.getTime() - agora.getTime();
-  setTimeout(() => {
-    verificarLimpezaDiaria();
-    agendarLimpezaProximaMeiaNoite();
-  }, msAteMeiaNoite);
-}
 
 // --------------------------------------------------------------------------
 // FLUXOS DO OPERADOR
@@ -405,27 +381,128 @@ window.cancelarAlertaPresencialOperadorMock = function (id) {
   window.sincronizarStorage();
 };
 
+// Dispensa LOCAL (não apaga do banco — outros operadores continuam vendo)
 window.dispensarComunicado = function (id) {
   const lidas = JSON.parse(localStorage.getItem(CHAVE_NOTIF_LIDAS) || "[]");
   if (!lidas.includes(id)) lidas.push(id);
   localStorage.setItem(CHAVE_NOTIF_LIDAS, JSON.stringify(lidas));
-  window.renderizarTudo();
+  window.renderizarSino();
+  window.renderizarModalNotificacoes();
+};
+
+// --------------------------------------------------------------------------
+// SINO DE NOTIFICAÇÕES (OPERADOR)
+// --------------------------------------------------------------------------
+let notifExpandidaId = null;
+
+function notificacoesAtivasParaOperador() {
+  const lidas = JSON.parse(localStorage.getItem(CHAVE_NOTIF_LIDAS) || "[]");
+  return [...localDB.notificacoes]
+    .filter(n => !lidas.includes(n.id))
+    .sort((a, b) => b.timestamp - a.timestamp);
+}
+
+window.renderizarSino = function () {
+  if (!operadorSessao) return;
+  const ativas = notificacoesAtivasParaOperador();
+  const badge = document.getElementById("bell-badge");
+  if (!badge) return;
+  if (ativas.length > 0) {
+    badge.style.display = "flex";
+    badge.innerText = ativas.length > 99 ? "99+" : String(ativas.length);
+  } else {
+    badge.style.display = "none";
+  }
+};
+
+window.abrirModalNotificacoes = function () {
+  notifExpandidaId = null;
+  window.renderizarModalNotificacoes();
+  document.getElementById("modal-notif-operador")?.classList.add("open");
+};
+
+window.fecharModalNotificacoes = function () {
+  document.getElementById("modal-notif-operador")?.classList.remove("open");
+  notifExpandidaId = null;
+};
+
+window.expandirNotificacao = function (id) {
+  notifExpandidaId = notifExpandidaId === id ? null : id;
+  window.renderizarModalNotificacoes();
+};
+
+window.renderizarModalNotificacoes = function () {
+  const cont = document.getElementById("notif-modal-lista");
+  if (!cont) return;
+  const ativas = notificacoesAtivasParaOperador();
+  if (ativas.length === 0) {
+    cont.innerHTML = `<div class="notif-modal-empty">
+      <i class="fa-solid fa-bell-slash"></i>
+      <p>Nenhum comunicado no momento.</p>
+    </div>`;
+    return;
+  }
+  cont.innerHTML = ativas.map(n => {
+    const expandida = notifExpandidaId === n.id;
+    const tipo = n.tipo || "info";
+    const titulo = n.titulo || "Comunicado";
+    return `
+      <div class="notif-item ${tipo} ${expandida ? 'expandida' : ''}" onclick="expandirNotificacao('${n.id}')">
+        <div class="notif-item-header">
+          <div class="notif-item-title">
+            <span class="notif-pill notif-pill-${tipo}">${tipo.toUpperCase()}</span>
+            <strong>${titulo}</strong>
+          </div>
+          <div class="notif-item-meta">
+            <span class="notif-time">${new Date(n.timestamp).toLocaleString("pt-BR")}</span>
+            <button class="notif-dismiss" onclick="event.stopPropagation(); dispensarComunicado('${n.id}')" title="Marcar como lido para mim">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+        <div class="notif-item-body">
+          ${expandida
+            ? `<div class="notif-item-full">${n.mensagem}</div>`
+            : `<div class="notif-item-preview">${n.mensagem}</div>`}
+        </div>
+        ${!expandida ? `<div class="notif-item-hint">Toque para expandir</div>` : ''}
+      </div>`;
+  }).join("");
 };
 
 // --------------------------------------------------------------------------
 // FLUXOS DO MONITOR
 // --------------------------------------------------------------------------
+function gerarSessionId() {
+  return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+}
+
 window.loginMonitorMock = function () {
   const nome  = document.getElementById("monitor-nome-login")?.value;
   const senha = document.getElementById("monitor-senha-login")?.value;
   if (!nome || !senha) { window.lancarToast("Selecione seu nome e insira a credencial.", "danger"); return; }
   if (MONITOR_PASSWORD && senha !== MONITOR_PASSWORD) { window.lancarToast("Senha incorreta.", "danger"); return; }
 
-  monitorSessao = { id: "M-" + nome.toLowerCase(), nome, status: "Disponível" };
+  const sessionId = gerarSessionId();
+  monitorSessao = {
+    id: "M-" + nome.toLowerCase() + "-" + sessionId,
+    sessionId,
+    nome,
+    status: "Disponível",
+  };
   sessionStorage.setItem("teleflow_mon_session", JSON.stringify(monitorSessao));
 
-  localDB.monitores_online = localDB.monitores_online.filter((m) => m.nome !== nome);
-  localDB.monitores_online.push({ id: monitorSessao.id, nome, status: "Disponível", lastSeen: Date.now() });
+  aposFirebaseCarregar(() => {
+    // NÃO remove outras sessões do mesmo nome — multi-PC suportado.
+    localDB.monitores_online.push({
+      id: monitorSessao.id,
+      sessionId,
+      nome,
+      status: "Disponível",
+      lastSeen: Date.now(),
+    });
+    window.sincronizarStorage();
+  });
 
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
 
@@ -436,12 +513,12 @@ window.loginMonitorMock = function () {
 
   window.irPara("tela-monitor");
   window.lancarToast(`Console inicializado para ${nome}.`, "success");
-  window.sincronizarStorage();
   iniciarHeartbeat();
 };
 
 window.deslogarMonitorMock = function () {
   if (monitorSessao) {
+    // Remove APENAS esta sessão; outras abas/PCs do mesmo nome continuam ativas.
     localDB.monitores_online = localDB.monitores_online.filter((m) => m.id !== monitorSessao.id);
     window.sincronizarStorage();
   }
@@ -463,9 +540,9 @@ window.alterarStatusMonitorMock = function (novoStatus) {
   const optDisp = document.getElementById("status-opt-disp");
   const optNp = document.getElementById("status-opt-np");
   if (optDisp) optDisp.className = novoStatus === "Disponível" ? "status-opt active-disp" : "status-opt";
-  if (optNp) optNp.className = novoStatus === "Não Perturbe" ? "status-opt active-np" : "status-opt";
+  if (optNp)   optNp.className   = novoStatus === "Não Perturbe" ? "status-opt active-np" : "status-opt";
 
-  window.lancarToast(`Status alterado: ${novoStatus === "Disponível" ? "Disponível" : "Pausa técnica"}`, "info");
+  window.lancarToast(`Status alterado: ${novoStatus === "Disponível" ? "Disponível" : "Indisponível"}`, "info");
   window.sincronizarStorage();
 };
 
@@ -536,67 +613,140 @@ window.trocarAbaAdmin = function (aba) {
 };
 
 window.forcarLogoutMonitorAdmin = function (monitorId, monitorNome) {
-  if (!confirm(`Forçar desconexão de ${monitorNome}?`)) return;
+  if (!confirm(`Forçar desconexão desta sessão de ${monitorNome}?`)) return;
   localDB.monitores_online = localDB.monitores_online.filter(m => m.id !== monitorId);
   window.sincronizarStorage();
-  window.lancarToast(`${monitorNome} foi desconectado.`, "info");
+  window.lancarToast(`Sessão de ${monitorNome} desconectada.`, "info");
 };
 
 window.enviarNotificacaoAdminMock = function () {
-  const tipo = document.getElementById("admin-notif-tipo")?.value || "info";
-  const msg = document.getElementById("admin-notif-msg")?.value.trim();
+  const tipo  = document.getElementById("admin-notif-tipo")?.value || "info";
+  const titulo = document.getElementById("admin-notif-titulo")?.value.trim() || "Comunicado";
+  const msg   = document.getElementById("admin-notif-msg")?.value.trim();
   if (!msg) { window.lancarToast("Escreva uma mensagem.", "danger"); return; }
-  if (msg.length > 280) { window.lancarToast("Mensagem muito longa (máx. 280).", "danger"); return; }
+  if (msg.length > 600) { window.lancarToast("Mensagem muito longa (máx. 600).", "danger"); return; }
 
   localDB.notificacoes.push({
     id: "N-" + Date.now(),
-    tipo, mensagem: msg,
+    tipo, titulo, mensagem: msg,
     timestamp: Date.now(),
     autor: "Administração",
   });
   document.getElementById("admin-notif-msg").value = "";
+  document.getElementById("admin-notif-titulo").value = "";
   window.lancarToast("Comunicado transmitido a todos os operadores.", "success");
   window.sincronizarStorage();
 };
 
 window.removerNotificacaoAdmin = function (id) {
+  if (!confirm("Remover este comunicado para todos os operadores?")) return;
   localDB.notificacoes = localDB.notificacoes.filter(n => n.id !== id);
   window.sincronizarStorage();
 };
 
-window.exportarRelatorioCSV = function () {
-  const periodo = document.getElementById("report-periodo")?.value || "semana";
+// --------------------------------------------------------------------------
+// EXPORT JSON + LIMPEZA MANUAL (admin)
+// --------------------------------------------------------------------------
+function inicioDoDiaTs() { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); }
+
+function filtrarCasosPorPeriodo(periodo, base = localDB.casos) {
+  const agora = Date.now();
+  let limite = 0;
+  if (periodo === "hoje")   limite = inicioDoDiaTs();
+  if (periodo === "semana") limite = agora - 7  * 24 * 60 * 60 * 1000;
+  if (periodo === "mes")    limite = agora - 30 * 24 * 60 * 60 * 1000;
+  if (periodo === "tudo")   limite = 0;
+  return base.filter(c => (c.timestamp || 0) >= limite);
+}
+
+window.exportarRelatorioJSON = function () {
+  const periodo = document.getElementById("report-periodo")?.value || "hoje";
   const casos = filtrarCasosPorPeriodo(periodo);
   if (!casos.length) { window.lancarToast("Sem dados no período selecionado.", "warning"); return; }
 
-  const linhas = [
-    ["ID","Operador","PA","Título","Descrição","Monitor Atendente","Status","Criado em","Concluído em","Feedback"],
-    ...casos.map(c => [
-      c.id, c.operador, c.pa, c.titulo, (c.descricao || "").replace(/[\r\n]+/g, " | "),
-      c.monitorAtendente || "—", c.status,
-      new Date(c.timestamp).toLocaleString("pt-BR"),
-      c.concluidoEm ? new Date(c.concluidoEm).toLocaleString("pt-BR") : "—",
-      (c.respostaFeedback || "").replace(/[\r\n]+/g, " | "),
-    ])
-  ];
-  const csv = "\uFEFF" + linhas.map(l => l.map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(";")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const payload = {
+    geradoEm: new Date().toISOString(),
+    periodo,
+    totalCasos: casos.length,
+    casos: casos.map(c => ({
+      id: c.id,
+      operador: c.operador,
+      pa: c.pa,
+      titulo: c.titulo,
+      descricao: c.descricao,
+      monitorDirecionado: c.monitorDirecionado || null,
+      monitorAtendente: c.monitorAtendente || null,
+      status: c.status,
+      respostaFeedback: c.respostaFeedback || null,
+      criadoEm: c.timestamp ? new Date(c.timestamp).toISOString() : null,
+      concluidoEm: c.concluidoEm ? new Date(c.concluidoEm).toISOString() : null,
+    })),
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `teleflow_relatorio_${periodo}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `suppaciente_casos_${periodo}_${new Date().toISOString().slice(0,10)}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
+  window.lancarToast(`Download iniciado: ${casos.length} casos.`, "success");
 };
 
-function filtrarCasosPorPeriodo(periodo) {
-  const agora = Date.now();
-  let limite = 0;
-  if (periodo === "hoje")     limite = new Date().setHours(0,0,0,0);
-  if (periodo === "semana")   limite = agora - 7 * 24 * 60 * 60 * 1000;
-  if (periodo === "mes")      limite = agora - 30 * 24 * 60 * 60 * 1000;
-  if (periodo === "tudo")     limite = 0;
-  return localDB.casos.filter(c => (c.timestamp || 0) >= limite);
+window.apagarConcluidosAdmin = function () {
+  const periodo = document.getElementById("limpeza-periodo")?.value || "hoje";
+  // Seleciona SOMENTE concluídos dentro do período.
+  const alvos = filtrarCasosPorPeriodo(periodo).filter(c => c.status === "Concluído");
+
+  if (alvos.length === 0) {
+    window.lancarToast("Nenhum caso concluído encontrado nesse período.", "warning");
+    return;
+  }
+  const labelPeriodo = {
+    hoje: "concluídos hoje",
+    semana: "concluídos nos últimos 7 dias",
+    mes: "concluídos nos últimos 30 dias",
+    tudo: "TODOS os concluídos do histórico",
+  }[periodo];
+
+  const ok = confirm(
+    `Apagar ${alvos.length} caso(s) ${labelPeriodo}?\n\n` +
+    `Apenas casos com status "Concluído" serão removidos.\n` +
+    `Pendentes e em tratativa NÃO serão tocados.\n\n` +
+    `Esta ação não pode ser desfeita.`
+  );
+  if (!ok) return;
+
+  const idsApagar = new Set(alvos.map(c => c.id));
+  const antes = localDB.casos.length;
+  localDB.casos = localDB.casos.filter(c => !idsApagar.has(c.id));
+  const removidos = antes - localDB.casos.length;
+
+  window.sincronizarStorage();
+  window.lancarToast(`${removidos} caso(s) concluído(s) apagado(s).`, "success");
+  atualizarPreviewLimpeza();
+};
+
+function atualizarPreviewLimpeza() {
+  const cont = document.getElementById("limpeza-preview");
+  if (!cont) return;
+  const periodo = document.getElementById("limpeza-periodo")?.value || "hoje";
+  const alvos = filtrarCasosPorPeriodo(periodo).filter(c => c.status === "Concluído");
+  const pendentesNoPeriodo = filtrarCasosPorPeriodo(periodo).filter(c => c.status !== "Concluído").length;
+
+  cont.innerHTML = `
+    <div class="limpeza-preview-grid">
+      <div class="limpeza-stat danger">
+        <span class="limpeza-stat-label">Serão apagados</span>
+        <span class="limpeza-stat-value">${alvos.length}</span>
+        <span class="limpeza-stat-sub">casos concluídos</span>
+      </div>
+      <div class="limpeza-stat safe">
+        <span class="limpeza-stat-label">Permanecem intactos</span>
+        <span class="limpeza-stat-value">${pendentesNoPeriodo}</span>
+        <span class="limpeza-stat-sub">pendentes / em tratativa</span>
+      </div>
+    </div>`;
 }
 
 // --------------------------------------------------------------------------
@@ -704,9 +854,9 @@ window.atualizarApenasTempoEStatusModal = function () {
 // --------------------------------------------------------------------------
 window.renderizarTudo = function () {
   const min = (t) => Math.floor((Date.now() - t) / 60000);
-  const monitoresAtivos = getMonitoresAtivosFiltrados();
+  const monitoresAtivos = getMonitoresAtivosUnicos();
 
-  // 1. Monitores online (visão do operador) — só ativos!
+  // 1. Monitores online (visão do operador)
   const gridMonitores = document.getElementById("grid-monitores-online");
   if (gridMonitores && operadorSessao) {
     if (monitoresAtivos.length === 0) {
@@ -714,37 +864,23 @@ window.renderizarTudo = function () {
         `<div style="grid-column:1/-1; color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum monitor conectado no momento. Suas requisições entram na fila global.</div>`;
     } else {
       gridMonitores.innerHTML = monitoresAtivos
-        .map(m => `
-          <div class="monitor-status-card ${m.status === "Disponível" ? "disp" : "np"}">
-            <strong>${m.nome}</strong>
-            <span>${m.status === "Disponível" ? "Disponível" : "Pausa técnica"}</span>
-          </div>`)
+        .map(m => {
+          const indisp = m.status !== "Disponível";
+          const sufixo = indisp ? " (Indisponível)" : "";
+          return `
+            <div class="monitor-status-card ${indisp ? 'np' : 'disp'}">
+              <strong>${m.nome}${sufixo}</strong>
+              <span>${indisp ? 'Indisponível' : 'Disponível'}</span>
+            </div>`;
+        })
         .join("");
     }
   }
 
-  // 2. Comunicados admin para operador
-  const boxCom = document.getElementById("operador-comunicados");
-  if (boxCom && operadorSessao) {
-    const lidas = JSON.parse(localStorage.getItem(CHAVE_NOTIF_LIDAS) || "[]");
-    const agora = Date.now();
-    const ativas = localDB.notificacoes
-      .filter(n => !lidas.includes(n.id) && (agora - n.timestamp) < NOTIF_EXPIRACAO_MS)
-      .sort((a, b) => b.timestamp - a.timestamp);
-    if (ativas.length === 0) {
-      boxCom.style.display = "none";
-      boxCom.innerHTML = "";
-    } else {
-      boxCom.style.display = "flex";
-      boxCom.innerHTML = ativas.map(n => `
-        <div class="op-comunicado ${n.tipo || "info"}">
-          <div class="op-comunicado-msg">
-            <strong><i class="fa-solid fa-bullhorn"></i> ${n.autor || "Administração"}:</strong> ${n.mensagem}
-            <span class="op-comunicado-time">${new Date(n.timestamp).toLocaleString("pt-BR")}</span>
-          </div>
-          <button class="op-comunicado-dismiss" onclick="dispensarComunicado('${n.id}')" title="Marcar como lido"><i class="fa-solid fa-xmark"></i></button>
-        </div>`).join("");
-    }
+  // 2. Sino de notificações
+  window.renderizarSino();
+  if (document.getElementById("modal-notif-operador")?.classList.contains("open")) {
+    window.renderizarModalNotificacoes();
   }
 
   // 3. Alerta presencial / botão chamada
@@ -901,11 +1037,12 @@ window.renderizarTudo = function () {
     }
   }
 
-  // 7. Renderização do admin (se aba ativa)
+  // 7. Renderização do admin (se tela ativa)
   if (adminSessao && document.getElementById("tela-admin")?.classList.contains("active")) {
     renderizarAdminMonitores();
     renderizarAdminNotificacoes();
     renderizarRelatorios();
+    atualizarPreviewLimpeza();
   }
 };
 
@@ -917,26 +1054,29 @@ function renderizarAdminMonitores() {
   if (!cont) return;
   const agora = Date.now();
   if (localDB.monitores_online.length === 0) {
-    cont.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); padding:14px; text-align:center; font-style:italic;">Nenhum monitor conectado.</div>`;
+    cont.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); padding:14px; text-align:center; font-style:italic;">Nenhuma sessão de monitor conectada.</div>`;
     return;
   }
   cont.innerHTML = localDB.monitores_online.map(m => {
     const segundosOff = m.lastSeen ? Math.round((agora - m.lastSeen) / 1000) : null;
     const ativo = !m.lastSeen || (agora - m.lastSeen) < HEARTBEAT_EXPIRACAO;
-    const badgeStatus = ativo
-      ? `<span class="badge success">${m.status || "Disponível"}</span>`
-      : `<span class="badge danger">Fantasma (${segundosOff}s sem sinal)</span>`;
+    const indisp = m.status === "Não Perturbe";
+    const badgeStatus = !ativo
+      ? `<span class="badge danger">Fantasma (${segundosOff}s sem sinal)</span>`
+      : indisp
+        ? `<span class="badge danger">Indisponível</span>`
+        : `<span class="badge success">Disponível</span>`;
     return `
       <div class="admin-monitor-card">
         <div class="am-top">
           <div><div class="am-name">${m.nome}</div>
-            <div class="am-meta">ID: ${m.id} · Último sinal: ${m.lastSeen ? new Date(m.lastSeen).toLocaleTimeString("pt-BR") : "—"}</div>
+            <div class="am-meta">Sessão: ${m.sessionId || m.id} · Último sinal: ${m.lastSeen ? new Date(m.lastSeen).toLocaleTimeString("pt-BR") : "—"}</div>
           </div>
           ${badgeStatus}
         </div>
         <div class="am-actions">
           <button class="btn-danger" onclick="forcarLogoutMonitorAdmin('${m.id}', '${m.nome.replace(/'/g, "\\'")}')">
-            <i class="fa-solid fa-power-off"></i> Forçar desconexão
+            <i class="fa-solid fa-power-off"></i> Forçar desconexão desta sessão
           </button>
         </div>
       </div>`;
@@ -948,12 +1088,13 @@ function renderizarAdminNotificacoes() {
   if (!cont) return;
   const ordenadas = [...localDB.notificacoes].sort((a,b) => b.timestamp - a.timestamp);
   if (ordenadas.length === 0) {
-    cont.innerHTML = `<div style="color:var(--text-muted); padding:10px; text-align:center; font-style:italic;">Nenhum comunicado enviado.</div>`;
+    cont.innerHTML = `<div style="color:var(--text-muted); padding:10px; text-align:center; font-style:italic;">Nenhum comunicado ativo.</div>`;
     return;
   }
   cont.innerHTML = ordenadas.map(n => `
     <div class="notif-history-item ${n.tipo || "info"}">
-      <div><strong>${(n.tipo || "info").toUpperCase()}:</strong> ${n.mensagem}
+      <div>
+        <strong>${(n.tipo || "info").toUpperCase()}${n.titulo ? ' · ' + n.titulo : ''}:</strong> ${n.mensagem}
         <div class="nh-time">${new Date(n.timestamp).toLocaleString("pt-BR")}</div>
       </div>
       <button onclick="removerNotificacaoAdmin('${n.id}')"><i class="fa-solid fa-trash"></i> Remover</button>
@@ -964,7 +1105,6 @@ window.renderizarRelatorios = function () {
   const periodo = document.getElementById("report-periodo")?.value || "semana";
   const casos = filtrarCasosPorPeriodo(periodo);
 
-  // Stats gerais
   const total = casos.length;
   const concl = casos.filter(c => c.status === "Concluído").length;
   const pend  = casos.filter(c => c.status === "Pendente").length;
@@ -979,7 +1119,6 @@ window.renderizarRelatorios = function () {
     `;
   }
 
-  // Tabela por monitor
   const porMonitor = {};
   casos.forEach(c => {
     if (!c.monitorAtendente) return;
@@ -1005,22 +1144,36 @@ window.renderizarRelatorios = function () {
       tabela.innerHTML = `
         <table class="report-table">
           <thead><tr>
-            <th>Monitor</th><th>Atendidos</th><th>Concluídos</th><th>Em tratativa</th><th>Tempo médio</th>
+            <th class="col-monitor">Monitor</th>
+            <th class="col-num">Atendidos</th>
+            <th class="col-num">Concluídos</th>
+            <th class="col-num">Em tratativa</th>
+            <th class="col-num">Tempo médio</th>
           </tr></thead>
           <tbody>
             ${linhas.map(([nome, s]) => `
               <tr>
-                <td><strong>${nome}</strong></td>
-                <td class="num">${s.total}</td>
-                <td class="num" style="color:var(--success);">${s.concluidos}</td>
-                <td class="num" style="color:var(--info);">${s.emTratativa}</td>
-                <td class="num">${s.qtdComTempo ? Math.round(s.somaMin / s.qtdComTempo) + " min" : "—"}</td>
+                <td class="col-monitor"><strong>${nome}</strong></td>
+                <td class="col-num">${s.total}</td>
+                <td class="col-num" style="color:var(--success);">${s.concluidos}</td>
+                <td class="col-num" style="color:var(--info);">${s.emTratativa}</td>
+                <td class="col-num">${s.qtdComTempo ? Math.round(s.somaMin / s.qtdComTempo) + " min" : "—"}</td>
               </tr>`).join("")}
           </tbody>
         </table>`;
     }
   }
 };
+
+// --------------------------------------------------------------------------
+// SUPORTE A "ENTER" NOS LOGINS
+// --------------------------------------------------------------------------
+function ligarEnter(el, fn) {
+  if (!el) return;
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); fn(); }
+  });
+}
 
 // --------------------------------------------------------------------------
 // INICIALIZAÇÃO
@@ -1030,10 +1183,23 @@ window.addEventListener("DOMContentLoaded", () => {
     window.inicializarSincronismoFirebase();
   }
 
-  // Limpeza diária
-  verificarLimpezaDiaria();
-  agendarLimpezaProximaMeiaNoite();
-  setInterval(verificarLimpezaDiaria, 5 * 60 * 1000); // checa a cada 5 min
+  // Enter em todas as telas de login
+  ligarEnter(document.getElementById("op-nome"),            () => window.iniciarSessaoOperadorMock());
+  ligarEnter(document.getElementById("op-pa"),              () => window.iniciarSessaoOperadorMock());
+  ligarEnter(document.getElementById("monitor-nome-login"), () => window.loginMonitorMock());
+  ligarEnter(document.getElementById("monitor-senha-login"),() => window.loginMonitorMock());
+  ligarEnter(document.getElementById("admin-senha-login"),  () => window.loginAdminMock());
+
+  // Preview da limpeza atualiza com o select
+  document.getElementById("limpeza-periodo")?.addEventListener("change", atualizarPreviewLimpeza);
+
+  // Fecha modal de notificações ao clicar fora
+  document.getElementById("modal-notif-operador")?.addEventListener("click", (e) => {
+    if (e.target.id === "modal-notif-operador") window.fecharModalNotificacoes();
+  });
+  document.getElementById("modal-detalhe-caso")?.addEventListener("click", (e) => {
+    if (e.target.id === "modal-detalhe-caso") window.fecharModalCaso();
+  });
 
   if (operadorSessao) {
     document.getElementById("txt-op-nome").innerText = operadorSessao.nome;
@@ -1049,13 +1215,18 @@ window.addEventListener("DOMContentLoaded", () => {
     const optDisp = document.getElementById("status-opt-disp");
     const optNp = document.getElementById("status-opt-np");
     if (optDisp) optDisp.className = monitorSessao.status === "Disponível" ? "status-opt active-disp" : "status-opt";
-    if (optNp) optNp.className = monitorSessao.status === "Não Perturbe" ? "status-opt active-np" : "status-opt";
+    if (optNp)   optNp.className   = monitorSessao.status === "Não Perturbe" ? "status-opt active-np" : "status-opt";
 
-    // Re-registra no DB SOMENTE depois que o Firebase tiver carregado,
-    // para não sobrescrever a base com lista vazia (bug que apagava casos).
+    // Re-registra esta sessão (sessionId preservado em sessionStorage)
     aposFirebaseCarregar(() => {
       if (!localDB.monitores_online.find(m => m.id === monitorSessao.id)) {
-        localDB.monitores_online.push({ id: monitorSessao.id, nome: monitorSessao.nome, status: monitorSessao.status, lastSeen: Date.now() });
+        localDB.monitores_online.push({
+          id: monitorSessao.id,
+          sessionId: monitorSessao.sessionId,
+          nome: monitorSessao.nome,
+          status: monitorSessao.status,
+          lastSeen: Date.now(),
+        });
         window.sincronizarStorage();
       }
     });
