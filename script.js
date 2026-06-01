@@ -1,20 +1,15 @@
 /* ==========================================================================
-   Teleflow • v6.0
-   Mudanças desta versão:
-   - REMOVIDA limpeza automática de casos. Nada mais é apagado sozinho.
-   - Admin: botão "Baixar JSON do período" (substitui o CSV).
-   - Admin: nova aba "Manutenção" para apagar manualmente apenas os
-     concluídos por período (hoje / 7d / 30d / tudo).
-   - Operador: sino de notificações com modal expansível. Dispensa é
-     SEMPRE local (localStorage), nunca apaga do banco.
-   - Monitor: sessões por aba (multi-PC). Logoff em uma aba não derruba
-     as outras. Heartbeat se re-insere caso outra sessão tenha removido.
-   - "Pausa técnica" virou "Indisponível" em vermelho.
-   - Tela de Relatórios: tabela alinhada corretamente.
-   - Enter funciona em todas as telas de login.
+   Teleflow • v6.1 (HOTFIX concorrência)
+   Correção crítica:
+   - Toda escrita no Firebase agora é GRANULAR por item (set/remove no path
+     específico do id). Antes, sincronizarStorage() fazia fbSet na raiz
+     inteira (teleflow_root), e com múltiplos usuários simultâneos a última
+     escrita sobrescrevia a árvore inteira com um snapshot defasado —
+     causando o "sumiço" de casos, alertas e notificações.
+   - sincronizarStorage() é mantido apenas como no-op de compatibilidade.
    ========================================================================== */
 
-console.log("Teleflow v6.0 • Sino + Multi-sessão + Limpeza manual");
+console.log("Teleflow v6.1 • Escrita granular por item (hotfix concorrência)");
 
 // --------------------------------------------------------------------------
 // CONFIG
@@ -87,19 +82,46 @@ window.inicializarSincronismoFirebase = function () {
   });
 };
 
-window.sincronizarStorage = function () {
-  if (!window.fbDB) return;
+/* ----------------------------------------------------------------------
+   ESCRITA GRANULAR (hotfix v6.1)
+   Cada mutação grava SOMENTE o item alterado no path específico do id.
+   Isso evita que dois clientes sobrescrevam a árvore inteira com snapshots
+   defasados — causa raiz do sumiço de casos relatado em produção.
+   ---------------------------------------------------------------------- */
+function _podeEscrever() {
+  if (!window.fbDB) return false;
   if (!firebaseCarregado) {
     console.warn("[Sincronismo] Escrita ignorada: Firebase ainda não carregou.");
-    return;
+    return false;
   }
-  window.fbSet(window.fbRef(window.fbDB, "teleflow_root"), {
-    casos:            localDB.casos.reduce((a, c) => ({ ...a, [c.id]: c }), {}),
-    alertas_pa:       localDB.alertas_pa.reduce((a, x) => ({ ...a, [x.id]: x }), {}),
-    monitores_online: localDB.monitores_online.reduce((a, m) => ({ ...a, [m.id]: m }), {}),
-    notificacoes:     localDB.notificacoes.reduce((a, n) => ({ ...a, [n.id]: n }), {}),
-  });
+  return true;
+}
+
+window.salvarItem = function (secao, item) {
+  if (!_podeEscrever() || !item || !item.id) return;
+  try {
+    window.fbSet(window.fbRef(window.fbDB, `teleflow_root/${secao}/${item.id}`), item);
+  } catch (e) { console.error("[salvarItem]", secao, e); }
 };
+
+window.removerItem = function (secao, id) {
+  if (!_podeEscrever() || !id) return;
+  try {
+    window.fbRemove(window.fbRef(window.fbDB, `teleflow_root/${secao}/${id}`));
+  } catch (e) { console.error("[removerItem]", secao, id, e); }
+};
+
+window.removerVarios = function (secao, ids) {
+  if (!_podeEscrever() || !ids || !ids.length) return;
+  try {
+    const updates = {};
+    ids.forEach(id => { updates[`teleflow_root/${secao}/${id}`] = null; });
+    window.fbUpdate(window.fbRef(window.fbDB, "/"), updates);
+  } catch (e) { console.error("[removerVarios]", secao, e); }
+};
+
+// Mantido apenas por compatibilidade — NÃO usar mais; era a causa do bug.
+window.sincronizarStorage = function () { /* no-op desde v6.1 */ };
 
 function aposFirebaseCarregar(fn) {
   if (firebaseCarregado) fn();
@@ -210,22 +232,18 @@ function getMonitoresAtivosUnicos() {
 function dispararHeartbeat() {
   if (!monitorSessao) return;
   aposFirebaseCarregar(() => {
+    const registro = {
+      id: monitorSessao.id,
+      sessionId: monitorSessao.sessionId,
+      nome: monitorSessao.nome,
+      status: monitorSessao.status,
+      lastSeen: Date.now(),
+    };
     const idx = localDB.monitores_online.findIndex(m => m.id === monitorSessao.id);
-    if (idx === -1) {
-      // Outra sessão removeu — re-insere a minha
-      localDB.monitores_online.push({
-        id: monitorSessao.id,
-        sessionId: monitorSessao.sessionId,
-        nome: monitorSessao.nome,
-        status: monitorSessao.status,
-        lastSeen: Date.now(),
-      });
-    } else {
-      localDB.monitores_online[idx].lastSeen = Date.now();
-      localDB.monitores_online[idx].status   = monitorSessao.status;
-      localDB.monitores_online[idx].nome     = monitorSessao.nome;
-    }
-    window.sincronizarStorage();
+    if (idx === -1) localDB.monitores_online.push(registro);
+    else localDB.monitores_online[idx] = registro;
+    // Escrita granular: apenas a MINHA sessão.
+    window.salvarItem("monitores_online", registro);
   });
 }
 
@@ -243,12 +261,13 @@ function pararHeartbeat() {
 setInterval(() => {
   if (!firebaseCarregado) return;
   const agora = Date.now();
-  const ativos = localDB.monitores_online.filter(m =>
-    !m.lastSeen || (agora - m.lastSeen) < HEARTBEAT_EXPIRACAO
+  const fantasmas = localDB.monitores_online.filter(m =>
+    m.lastSeen && (agora - m.lastSeen) >= HEARTBEAT_EXPIRACAO
   );
-  if (ativos.length !== localDB.monitores_online.length) {
-    localDB.monitores_online = ativos;
-    window.sincronizarStorage();
+  if (fantasmas.length) {
+    const ids = fantasmas.map(m => m.id);
+    localDB.monitores_online = localDB.monitores_online.filter(m => !ids.includes(m.id));
+    window.removerVarios("monitores_online", ids);
   }
   window.renderizarTudo();
 }, 30_000);
@@ -257,9 +276,9 @@ setInterval(() => {
 window.addEventListener("beforeunload", () => {
   if (!monitorSessao || !window.fbDB) return;
   try {
-    const restantes = localDB.monitores_online.filter(m => m.id !== monitorSessao.id);
-    window.fbSet(window.fbRef(window.fbDB, "teleflow_root/monitores_online"),
-      restantes.reduce((a, m) => ({ ...a, [m.id]: m }), {}));
+    window.fbRemove(window.fbRef(
+      window.fbDB, `teleflow_root/monitores_online/${monitorSessao.id}`
+    ));
   } catch (e) {}
 });
 
@@ -306,18 +325,21 @@ window.enviarCasoMock = function () {
 
   if (!titulo || !descricao) { window.lancarToast("Preencha o título e a descrição do caso.", "danger"); return; }
 
+  let casoParaSalvar = null;
+
   if (inputId && inputId.value) {
     const idx = localDB.casos.findIndex((c) => c.id === inputId.value);
     if (idx !== -1) {
       Object.assign(localDB.casos[idx], { titulo, descricao, monitorDirecionado });
+      casoParaSalvar = localDB.casos[idx];
       window.lancarToast("Chamado atualizado com sucesso.", "success");
     }
     inputId.value = "";
     document.getElementById("btn-enviar-chamado").innerHTML = '<i class="fa-solid fa-paper-plane"></i> Transmitir para fila de triagem';
     document.getElementById("label-status-formulario").innerText = "Assunto / título do caso";
   } else {
-    localDB.casos.unshift({
-      id: "C-" + Math.floor(100000 + Math.random() * 900000),
+    casoParaSalvar = {
+      id: "C-" + Date.now() + "-" + Math.floor(1000 + Math.random() * 9000),
       operador: operadorSessao.nome,
       pa: operadorSessao.pa,
       titulo, descricao, monitorDirecionado,
@@ -325,14 +347,15 @@ window.enviarCasoMock = function () {
       timestamp: Date.now(),
       monitorAtendente: "",
       respostaFeedback: "",
-    });
+    };
+    localDB.casos.unshift(casoParaSalvar);
     window.lancarToast("Caso enviado para triagem.", "success");
   }
 
   if (inputTitulo) inputTitulo.value = "";
   if (inputDesc) inputDesc.value = "";
   if (selectMonitor) selectMonitor.value = "";
-  window.sincronizarStorage();
+  if (casoParaSalvar) window.salvarItem("casos", casoParaSalvar);
 };
 
 window.editarCasoOperadorMock = function (id) {
@@ -357,8 +380,8 @@ window.cancelarCasoOperadorMock = function (id) {
   if (caso.status !== "Pendente") { window.lancarToast("Não é possível cancelar um chamado em andamento.", "danger"); return; }
   if (confirm("Deseja realmente cancelar e excluir este chamado?")) {
     localDB.casos = localDB.casos.filter((c) => c.id !== id);
+    window.removerItem("casos", id);
     window.lancarToast("Chamado removido da fila.", "info");
-    window.sincronizarStorage();
   }
 };
 
@@ -367,18 +390,20 @@ window.chamarMonitorMock = function () {
   if (localDB.alertas_pa.some((a) => a.pa === operadorSessao.pa && a.status === "Aguardando")) {
     window.lancarToast("Você já possui uma solicitação ativa.", "danger"); return;
   }
-  localDB.alertas_pa.push({
-    id: "A-" + Date.now(), pa: operadorSessao.pa, operador: operadorSessao.nome,
+  const alerta = {
+    id: "A-" + Date.now() + "-" + Math.floor(1000 + Math.random() * 9000),
+    pa: operadorSessao.pa, operador: operadorSessao.nome,
     status: "Aguardando", timestamp: Date.now(),
-  });
+  };
+  localDB.alertas_pa.push(alerta);
+  window.salvarItem("alertas_pa", alerta);
   window.lancarToast("Alerta emitido. Aguarde o monitor na sua PA.", "success");
-  window.sincronizarStorage();
 };
 
 window.cancelarAlertaPresencialOperadorMock = function (id) {
   localDB.alertas_pa = localDB.alertas_pa.filter((a) => a.id !== id);
+  window.removerItem("alertas_pa", id);
   window.lancarToast("Solicitação cancelada.", "info");
-  window.sincronizarStorage();
 };
 
 // Dispensa LOCAL (não apaga do banco — outros operadores continuam vendo)
@@ -493,15 +518,16 @@ window.loginMonitorMock = function () {
   sessionStorage.setItem("teleflow_mon_session", JSON.stringify(monitorSessao));
 
   aposFirebaseCarregar(() => {
-    // NÃO remove outras sessões do mesmo nome — multi-PC suportado.
-    localDB.monitores_online.push({
+    const registro = {
       id: monitorSessao.id,
       sessionId,
       nome,
       status: "Disponível",
       lastSeen: Date.now(),
-    });
-    window.sincronizarStorage();
+    };
+    // NÃO remove outras sessões do mesmo nome — multi-PC suportado.
+    localDB.monitores_online.push(registro);
+    window.salvarItem("monitores_online", registro);
   });
 
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
@@ -519,8 +545,9 @@ window.loginMonitorMock = function () {
 window.deslogarMonitorMock = function () {
   if (monitorSessao) {
     // Remove APENAS esta sessão; outras abas/PCs do mesmo nome continuam ativas.
-    localDB.monitores_online = localDB.monitores_online.filter((m) => m.id !== monitorSessao.id);
-    window.sincronizarStorage();
+    const idSair = monitorSessao.id;
+    localDB.monitores_online = localDB.monitores_online.filter((m) => m.id !== idSair);
+    window.removerItem("monitores_online", idSair);
   }
   pararHeartbeat();
   sessionStorage.removeItem("teleflow_mon_session");
@@ -533,9 +560,17 @@ window.alterarStatusMonitorMock = function (novoStatus) {
   monitorSessao.status = novoStatus;
   sessionStorage.setItem("teleflow_mon_session", JSON.stringify(monitorSessao));
   const idx = localDB.monitores_online.findIndex((m) => m.id === monitorSessao.id);
+  let registro;
   if (idx !== -1) {
     localDB.monitores_online[idx].status = novoStatus;
     localDB.monitores_online[idx].lastSeen = Date.now();
+    registro = localDB.monitores_online[idx];
+  } else {
+    registro = {
+      id: monitorSessao.id, sessionId: monitorSessao.sessionId,
+      nome: monitorSessao.nome, status: novoStatus, lastSeen: Date.now(),
+    };
+    localDB.monitores_online.push(registro);
   }
   const optDisp = document.getElementById("status-opt-disp");
   const optNp = document.getElementById("status-opt-np");
@@ -543,7 +578,7 @@ window.alterarStatusMonitorMock = function (novoStatus) {
   if (optNp)   optNp.className   = novoStatus === "Não Perturbe" ? "status-opt active-np" : "status-opt";
 
   window.lancarToast(`Status alterado: ${novoStatus === "Disponível" ? "Disponível" : "Indisponível"}`, "info");
-  window.sincronizarStorage();
+  window.salvarItem("monitores_online", registro);
 };
 
 window.atenderCasoMonitorMock = function (id) {
@@ -552,8 +587,8 @@ window.atenderCasoMonitorMock = function (id) {
   if (!caso) return;
   caso.status = "Em Verificação";
   caso.monitorAtendente = monitorSessao.nome;
+  window.salvarItem("casos", caso);
   window.lancarToast(`Você assumiu a tratativa do chamado ${id}.`, "success");
-  window.sincronizarStorage();
   window.abrirModalCaso(id);
 };
 
@@ -563,8 +598,8 @@ window.concluirCasoMonitorMock = function (id, feedbackTexto) {
   caso.status = "Concluído";
   caso.respostaFeedback = feedbackTexto || "Atendimento avaliado e concluído pela supervisão.";
   caso.concluidoEm = Date.now();
+  window.salvarItem("casos", caso);
   window.lancarToast(`Chamado ${id} solucionado.`, "success");
-  window.sincronizarStorage();
 };
 
 window.atenderAlertaPresencialMock = function (id) {
@@ -573,14 +608,14 @@ window.atenderAlertaPresencialMock = function (id) {
   if (!alerta) return;
   alerta.status = "Em Atendimento";
   alerta.monitorAtendente = monitorSessao.nome;
+  window.salvarItem("alertas_pa", alerta);
   window.lancarToast(`Deslocamento registrado para a PA ${alerta.pa}.`, "info");
-  window.sincronizarStorage();
 };
 
 window.concluirAlertaPresencialMock = function (id) {
   localDB.alertas_pa = localDB.alertas_pa.filter((a) => a.id !== id);
+  window.removerItem("alertas_pa", id);
   window.lancarToast("Suporte presencial concluído.", "success");
-  window.sincronizarStorage();
 };
 
 // --------------------------------------------------------------------------
@@ -615,7 +650,7 @@ window.trocarAbaAdmin = function (aba) {
 window.forcarLogoutMonitorAdmin = function (monitorId, monitorNome) {
   if (!confirm(`Forçar desconexão desta sessão de ${monitorNome}?`)) return;
   localDB.monitores_online = localDB.monitores_online.filter(m => m.id !== monitorId);
-  window.sincronizarStorage();
+  window.removerItem("monitores_online", monitorId);
   window.lancarToast(`Sessão de ${monitorNome} desconectada.`, "info");
 };
 
@@ -626,22 +661,23 @@ window.enviarNotificacaoAdminMock = function () {
   if (!msg) { window.lancarToast("Escreva uma mensagem.", "danger"); return; }
   if (msg.length > 600) { window.lancarToast("Mensagem muito longa (máx. 600).", "danger"); return; }
 
-  localDB.notificacoes.push({
-    id: "N-" + Date.now(),
+  const notif = {
+    id: "N-" + Date.now() + "-" + Math.floor(1000 + Math.random() * 9000),
     tipo, titulo, mensagem: msg,
     timestamp: Date.now(),
     autor: "Administração",
-  });
+  };
+  localDB.notificacoes.push(notif);
+  window.salvarItem("notificacoes", notif);
   document.getElementById("admin-notif-msg").value = "";
   document.getElementById("admin-notif-titulo").value = "";
   window.lancarToast("Comunicado transmitido a todos os operadores.", "success");
-  window.sincronizarStorage();
 };
 
 window.removerNotificacaoAdmin = function (id) {
   if (!confirm("Remover este comunicado para todos os operadores?")) return;
   localDB.notificacoes = localDB.notificacoes.filter(n => n.id !== id);
-  window.sincronizarStorage();
+  window.removerItem("notificacoes", id);
 };
 
 // --------------------------------------------------------------------------
@@ -717,12 +753,15 @@ window.apagarConcluidosAdmin = function () {
   );
   if (!ok) return;
 
-  const idsApagar = new Set(alvos.map(c => c.id));
+  const idsApagar = alvos.map(c => c.id);
+  const setIds = new Set(idsApagar);
   const antes = localDB.casos.length;
-  localDB.casos = localDB.casos.filter(c => !idsApagar.has(c.id));
+  localDB.casos = localDB.casos.filter(c => !setIds.has(c.id));
   const removidos = antes - localDB.casos.length;
 
-  window.sincronizarStorage();
+  // Apaga SOMENTE os ids selecionados (concluídos do período). Pendentes
+  // e Em Verificação não são tocados em hipótese alguma.
+  window.removerVarios("casos", idsApagar);
   window.lancarToast(`${removidos} caso(s) concluído(s) apagado(s).`, "success");
   atualizarPreviewLimpeza();
 };
@@ -1220,14 +1259,15 @@ window.addEventListener("DOMContentLoaded", () => {
     // Re-registra esta sessão (sessionId preservado em sessionStorage)
     aposFirebaseCarregar(() => {
       if (!localDB.monitores_online.find(m => m.id === monitorSessao.id)) {
-        localDB.monitores_online.push({
+        const registro = {
           id: monitorSessao.id,
           sessionId: monitorSessao.sessionId,
           nome: monitorSessao.nome,
           status: monitorSessao.status,
           lastSeen: Date.now(),
-        });
-        window.sincronizarStorage();
+        };
+        localDB.monitores_online.push(registro);
+        window.salvarItem("monitores_online", registro);
       }
     });
     iniciarHeartbeat();
