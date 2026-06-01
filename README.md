@@ -39,53 +39,8 @@ O projeto adota uma filosofia *lean software*, estruturado em três pilares fund
 ---
 
 ## ⚙️ Configuração e Instalação
-
-Como o projeto é construído sobre tecnologias nativas da Web (Vanilla Architecture), **não é necessário realizar compilação, transpilação ou instalação de pacotes node_modules**.
-
-1.  Clone o repositório para o seu ambiente local:
-    ```bash
-    git clone https://github.com/seu-usuario/teleflow.git
-    ```
-2.  Aceda ao diretório do projeto:
-    ```bash
-    cd teleflow
-    ```
-3.  **Configuração do Firebase:**
-    As credenciais padrão do Firebase já vêm pré-configuradas no ecossistema de módulos do `index.html`. Caso necessite de alterar o banco para o seu ambiente de homologação ou produção, localize o bloco `firebaseConfig` no final do arquivo `index.html` e substitua as propriedades:
-    ```javascript
-    const firebaseConfig = {
-      apiKey: "SUA_API_KEY",
-      authDomain: "seu-app.firebaseapp.com",
-      databaseURL: "https://seu-app-default-rtdb.firebaseio.com",
-      projectId: "seu-projeto",
-      storageBucket: "seu-app.firebasestorage.app",
-      messagingSenderId: "SEU_SENDER_ID",
-      appId: "SEU_APP_ID"
-    };
-    ```
-
-4.  **Execução:**
-    Para garantir o correto funcionamento dos módulos ES6 (`import`/`export`), a aplicação deve ser servida através de um servidor HTTP local.
-    * Se utiliza o **VS Code**, clique com o botão direito em `index.html` e selecione **Open with Live Server**.
-    * Alternativamente, utilizando **Python**:
-        ```bash
-        python -m http.server 8080
-        ```
-    * Abra o navegador e aceda a `http://localhost:8080`.
-
----
-
-## 📡 Ciclo de Vida do Heartbeat (Múltiplas Sessões)
-
-Para evitar quedas falsas de conexão e permitir que o mesmo supervisor monitore a operação através de múltiplas abas, o sistema adota as seguintes métricas de sincronia:
-
-* **Intervalo de Pulso (`HEARTBEAT_INTERVALO`):** `25.000 ms` (25 segundos). Cada aba envia um sinal de vitalidade individual para o Firebase.
-* **Expirabilidade de Conexão (`HEARTBEAT_EXPIRACAO`):** `75.000 ms` (75 segundos). Se um operador/monitor ficar offline por mais de 75 segundos sem comunicação, o sistema remove-o automaticamente do painel ativo de online.
-
----
-
-## 📄 Licença
-
-Este projeto é de uso interno e restrito. O armazenamento de credenciais críticas em código-fonte (como `ADMIN_PASSWORD`) foi desenhado para ambientes controlados de intranet corporativa. Garanta a correta rotação de chaves caso exponha a aplicação a redes públicas.
-README.md
-Exibindo README.md.
+1. Clone este repositório para o seu ambiente local.
+2. Abra o ficheiro `index.html` e altere o objeto `firebaseConfig` com as chaves e credenciais da sua própria base de dados do Firebase.
+3. Devido à utilização de módulos nativos do JavaScript, a aplicação deve ser executada através de um servidor local. Pode utilizar a extensão **Live Server** do VS Code ou o comando:
+   ```bash
+   python -m http.server 8080
