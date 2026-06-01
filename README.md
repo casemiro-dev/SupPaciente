@@ -38,21 +38,6 @@ O projeto adota uma filosofia *lean software*, estruturado em três pilares fund
 
 ---
 
-## 🔑 Perfis de Acesso e Credenciais
-
-A aplicação possui mecanismos de controlo de acesso baseados em palavras-passe configuradas estaticamente na camada de serviço:
-
-* **Administrador:**
-    * **Palavra-passe:** `casemiro2026`
-    * **Capacidades:** Acesso a relatórios avançados, exportação de dados analíticos em JSON e ferramentas de purga/manutenção do banco de dados.
-* **Monitor:**
-    * **Palavra-passe:** *Livre / Configuração Nula* (Aceita qualquer credencial de validação por padrão).
-    * **Capacidades:** Supervisão das PAs em tempo real, monitorização de filas de triagem e persistência de sessões via *Heartbeat* dinâmico.
-* **Operador:**
-    * **Capacidades:** Abertura e acompanhamento de chamados, atualização de status operacionais (Disponível, Indisponível) e central de notificações local.
-
----
-
 ## ⚙️ Configuração e Instalação
 
 Como o projeto é construído sobre tecnologias nativas da Web (Vanilla Architecture), **não é necessário realizar compilação, transpilação ou instalação de pacotes node_modules**.
