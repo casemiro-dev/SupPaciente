@@ -59,6 +59,23 @@
     </div>
   </div>
 
+  <!-- Modal de notificações (operador) -->
+  <div id="modal-notif-operador" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-bell" style="color:var(--primary);"></i> Comunicados</h3>
+        <div class="modal-header-actions">
+          <button class="btn-close-modal" onclick="fecharModalNotificacoes()" aria-label="Fechar">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div id="notif-modal-lista" class="notif-modal-lista"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- =====================================================================
        TELA: LOGIN
        ===================================================================== -->
@@ -145,7 +162,7 @@
 
     <div class="input-group">
       <label>Senha administrativa</label>
-      <input type="password" id="admin-senha-login" placeholder="Digite a senha" onkeydown="if(event.key==='Enter')loginAdminMock()">
+      <input type="password" id="admin-senha-login" placeholder="Digite a senha">
     </div>
 
     <button onclick="loginAdminMock()">
@@ -170,6 +187,9 @@
       <button class="admin-tab active" data-tab="relatorios" onclick="trocarAbaAdmin('relatorios')">
         <i class="fa-solid fa-chart-column"></i> Relatórios
       </button>
+      <button class="admin-tab" data-tab="manutencao" onclick="trocarAbaAdmin('manutencao')">
+        <i class="fa-solid fa-broom"></i> Manutenção
+      </button>
       <button class="admin-tab" data-tab="monitores" onclick="trocarAbaAdmin('monitores')">
         <i class="fa-solid fa-users-viewfinder"></i> Monitores online
       </button>
@@ -182,16 +202,16 @@
     <div class="admin-tab-content active" id="admin-aba-relatorios">
       <div class="report-controls">
         <div class="input-group" style="margin:0; flex:1; min-width:200px;">
-          <label>Período</label>
+          <label>Período do relatório</label>
           <select id="report-periodo" onchange="renderizarRelatorios()">
-            <option value="semana">Últimos 7 dias</option>
-            <option value="mes">Últimos 30 dias</option>
             <option value="hoje">Hoje</option>
+            <option value="semana" selected>Últimos 7 dias</option>
+            <option value="mes">Últimos 30 dias</option>
             <option value="tudo">Histórico completo</option>
           </select>
         </div>
-        <button onclick="exportarRelatorioCSV()" class="btn-secondary" style="width:auto; align-self:flex-end;">
-          <i class="fa-solid fa-download"></i> Exportar CSV
+        <button onclick="exportarRelatorioJSON()" class="btn-secondary" style="width:auto; align-self:flex-end;">
+          <i class="fa-solid fa-file-arrow-down"></i> Baixar JSON do período
         </button>
       </div>
 
@@ -203,12 +223,39 @@
       </div>
     </div>
 
+    <!-- Aba: Manutenção / Limpeza -->
+    <div class="admin-tab-content" id="admin-aba-manutencao">
+      <div class="section-monitor-fluid">
+        <h3><i class="fa-solid fa-trash-can" style="color:var(--danger);"></i> Apagar casos concluídos</h3>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+          Esta ação remove permanentemente do banco apenas os casos com status <strong>Concluído</strong> dentro do período selecionado. Casos pendentes ou em tratativa <strong>nunca</strong> são apagados.
+        </p>
+
+        <div class="report-controls">
+          <div class="input-group" style="margin:0; flex:1; min-width:220px;">
+            <label>Período a apagar</label>
+            <select id="limpeza-periodo">
+              <option value="hoje">Concluídos hoje</option>
+              <option value="semana">Concluídos nos últimos 7 dias</option>
+              <option value="mes">Concluídos nos últimos 30 dias</option>
+              <option value="tudo">Todos os concluídos (histórico completo)</option>
+            </select>
+          </div>
+          <button onclick="apagarConcluidosAdmin()" class="btn-danger" style="width:auto; align-self:flex-end;">
+            <i class="fa-solid fa-eraser"></i> Apagar concluídos do período
+          </button>
+        </div>
+
+        <div id="limpeza-preview" class="limpeza-preview"></div>
+      </div>
+    </div>
+
     <!-- Aba: Monitores online -->
     <div class="admin-tab-content" id="admin-aba-monitores">
       <div class="section-monitor-fluid">
         <h3><i class="fa-solid fa-signal" style="color:var(--success);"></i> Monitores conectados agora</h3>
         <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
-          Use o botão de força para remover sessões fantasmas que continuam aparecendo como online.
+          Cada linha representa uma sessão (aba/PC) ativa. Use a força para remover sessões fantasmas.
         </p>
         <div id="admin-lista-monitores" class="grid-cards-container"></div>
       </div>
@@ -229,14 +276,21 @@
           </select>
         </div>
         <div class="input-group">
-          <label>Mensagem (até 280 caracteres)</label>
-          <textarea id="admin-notif-msg" maxlength="280" placeholder="Ex: Sistema do CRM ficará indisponível das 14h às 14h30 para manutenção."></textarea>
+          <label>Título curto</label>
+          <input type="text" id="admin-notif-titulo" maxlength="80" placeholder="Ex: Manutenção CRM 14h">
+        </div>
+        <div class="input-group">
+          <label>Mensagem (até 600 caracteres)</label>
+          <textarea id="admin-notif-msg" maxlength="600" placeholder="Ex: Sistema do CRM ficará indisponível das 14h às 14h30 para manutenção."></textarea>
         </div>
         <button onclick="enviarNotificacaoAdminMock()" class="btn-success">
           <i class="fa-solid fa-bullhorn"></i> Transmitir para todos os operadores
         </button>
 
-        <h3 style="margin-top:28px;"><i class="fa-solid fa-clock-rotate-left"></i> Comunicados recentes</h3>
+        <h3 style="margin-top:28px;"><i class="fa-solid fa-clock-rotate-left"></i> Comunicados ativos</h3>
+        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px;">
+          Comunicados ficam ativos para todos os operadores até serem removidos aqui.
+        </p>
         <div id="admin-lista-notificacoes" class="notif-history"></div>
       </div>
     </div>
@@ -269,13 +323,16 @@
         <h2 style="margin:0; font-size:1.2rem;">
           <i class="fa-solid fa-headset" style="color:var(--primary);"></i> Terminal do operador
         </h2>
-        <button onclick="limparSessaoESairMock()" class="btn-back" style="margin:0;">
-          <i class="fa-solid fa-right-from-bracket"></i> Logoff
-        </button>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn-bell" id="btn-bell-notif" onclick="abrirModalNotificacoes()" aria-label="Comunicados" title="Comunicados">
+            <i class="fa-solid fa-bell"></i>
+            <span id="bell-badge" class="bell-badge" style="display:none;">0</span>
+          </button>
+          <button onclick="limparSessaoESairMock()" class="btn-back" style="margin:0;">
+            <i class="fa-solid fa-right-from-bracket"></i> Logoff
+          </button>
+        </div>
       </div>
-
-      <!-- Comunicados do admin -->
-      <div id="operador-comunicados" class="op-comunicados" style="display:none;"></div>
 
       <div class="user-info-bar">
         <div>
@@ -368,7 +425,7 @@
         <span style="font-size:0.8rem; color:var(--text-muted);">Status:</span>
         <div class="status-selector">
           <button id="status-opt-disp" class="status-opt active-disp" onclick="alterarStatusMonitorMock('Disponível')">Disponível</button>
-          <button id="status-opt-np" class="status-opt" onclick="alterarStatusMonitorMock('Não Perturbe')">Pausa técnica</button>
+          <button id="status-opt-np" class="status-opt" onclick="alterarStatusMonitorMock('Não Perturbe')">Indisponível</button>
         </div>
       </div>
     </div>
