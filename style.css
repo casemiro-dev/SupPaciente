@@ -1,5 +1,5 @@
 /* =====================================================================
-   TELEFLOW · Design System v3.2
+   SupPaciente · Design System v3.3
    ===================================================================== */
 
 /* ---------- 1. TOKENS DE DESIGN ---------- */
@@ -261,7 +261,7 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
 .monitors-status-wrapper > label { display: block; margin-bottom: 10px; }
 .monitors-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 10px;
 }
 .monitor-status-card {
@@ -272,10 +272,21 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
   border-radius: var(--radius-sm);
   font-size: 0.86rem; font-weight: 500;
   color: var(--text-soft);
-  display: flex; align-items: center; gap: 8px;
+  display: flex; flex-direction: column; gap: 2px;
 }
-.monitor-status-card.disp { border-left-color: var(--success); background: var(--success-soft); color: var(--success-hover); }
-.monitor-status-card.np   { border-left-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.monitor-status-card strong { color: var(--text); font-weight: 600; }
+.monitor-status-card span { font-size: 0.75rem; color: var(--text-muted); }
+.monitor-status-card.disp {
+  border-left-color: var(--success);
+  background: var(--success-soft);
+}
+.monitor-status-card.disp strong { color: var(--success-hover); }
+.monitor-status-card.np {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+.monitor-status-card.np strong { color: var(--danger); }
+.monitor-status-card.np span { color: var(--danger); }
 
 /* ---------- 11. ROTEIROS ---------- */
 .shortcuts-wrapper { margin: 22px 0; }
@@ -306,7 +317,7 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
 }
 .status-opt:hover { background: transparent; color: var(--text); box-shadow: none; }
 .status-opt.active-disp { background: var(--success); color: #fff; }
-.status-opt.active-np   { background: var(--warning); color: #fff; }
+.status-opt.active-np   { background: var(--danger);  color: #fff; }
 
 /* ---------- 13. STATS ---------- */
 .dashboard-stats-compact {
@@ -644,6 +655,7 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
   align-items: flex-end;
 }
 
+/* ---------- 26. TABELA DE RELATÓRIO (alinhada) ---------- */
 .report-table-wrapper {
   background: var(--surface);
   border: 1.5px solid var(--border);
@@ -651,23 +663,44 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
   overflow: hidden;
 }
 .report-table {
-  width: 100%; border-collapse: collapse;
+  width: 100%;
+  border-collapse: collapse;
   font-size: 0.9rem;
+  table-layout: auto;
 }
-.report-table th, .report-table td {
-  padding: 12px 14px;
-  text-align: left;
+.report-table th,
+.report-table td {
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
+  vertical-align: middle;
 }
 .report-table thead th {
   background: var(--surface-alt);
-  font-size: 0.78rem; text-transform: uppercase;
-  letter-spacing: 0.04em; color: var(--text-muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
   font-weight: 700;
 }
 .report-table tbody tr:last-child td { border-bottom: none; }
 .report-table tbody tr:hover { background: var(--surface-hover); }
-.report-table .num { font-weight: 700; color: var(--primary); text-align: right; }
+
+/* Colunas: monitor à esquerda, numéricas centralizadas (header e valor) */
+.report-table th.col-monitor,
+.report-table td.col-monitor {
+  text-align: left;
+  width: 28%;
+}
+.report-table th.col-num,
+.report-table td.col-num {
+  text-align: center;
+  width: 18%;
+  font-variant-numeric: tabular-nums;
+}
+.report-table td.col-num {
+  font-weight: 700;
+  color: var(--primary);
+}
 .report-table .empty-cell {
   padding: 24px; text-align: center;
   color: var(--text-muted); font-style: italic;
@@ -682,35 +715,12 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
 }
 .admin-monitor-card .am-top {
   display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
 }
 .admin-monitor-card .am-name { font-weight: 700; color: var(--text); }
-.admin-monitor-card .am-meta { font-size: 0.78rem; color: var(--text-muted); }
+.admin-monitor-card .am-meta { font-size: 0.74rem; color: var(--text-muted); word-break: break-all; }
 .admin-monitor-card .am-actions { display: flex; gap: 8px; }
-.admin-monitor-card .am-actions button { flex: 1; width: auto; padding: 8px 10px; font-size: 0.82rem; }
-
-/* Comunicados admin -> operador */
-.op-comunicados { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-.op-comunicado {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-  padding: 12px 14px;
-  background: var(--info-soft);
-  border: 1.5px solid var(--info);
-  border-left: 4px solid var(--info);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 0.9rem;
-}
-.op-comunicado.success { background: var(--success-soft); border-color: var(--success); color: var(--text); }
-.op-comunicado.warning { background: var(--warning-soft); border-color: var(--warning); color: var(--text); }
-.op-comunicado.danger  { background: var(--danger-soft);  border-color: var(--danger);  color: var(--text); }
-.op-comunicado-msg { flex: 1; }
-.op-comunicado-time { font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 4px; }
-.op-comunicado-dismiss {
-  width: 26px; height: 26px; padding: 0; font-size: 0.75rem;
-  background: transparent; color: var(--text-muted);
-  border: 1.5px solid transparent; border-radius: var(--radius-sm);
-}
-.op-comunicado-dismiss:hover { background: rgba(0,0,0,0.08); color: var(--text); box-shadow: none; }
+.admin-monitor-card .am-actions button { flex: 1; width: auto; padding: 8px 10px; font-size: 0.8rem; }
 
 .notif-history { display: flex; flex-direction: column; gap: 8px; }
 .notif-history-item {
@@ -732,3 +742,142 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
   border: 1.5px solid var(--border);
 }
 .notif-history-item button:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); box-shadow: none; }
+
+/* ---------- 27. LIMPEZA ADMIN ---------- */
+.limpeza-preview { margin-top: 18px; }
+.limpeza-preview-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.limpeza-stat {
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.limpeza-stat.danger { border-color: var(--danger); background: var(--danger-soft); }
+.limpeza-stat.safe   { border-color: var(--success); background: var(--success-soft); }
+.limpeza-stat-label { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; }
+.limpeza-stat-value { font-size: 2rem; font-weight: 800; color: var(--text); line-height: 1; }
+.limpeza-stat.danger .limpeza-stat-value { color: var(--danger); }
+.limpeza-stat.safe   .limpeza-stat-value { color: var(--success); }
+.limpeza-stat-sub { font-size: 0.78rem; color: var(--text-muted); }
+
+/* ---------- 28. SINO DE NOTIFICAÇÕES ---------- */
+.btn-bell {
+  position: relative;
+  width: 42px; height: 42px; padding: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary);
+  border: 1.5px solid var(--border);
+  font-size: 1rem;
+}
+.btn-bell:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+.bell-badge {
+  position: absolute;
+  top: -4px; right: -4px;
+  min-width: 20px; height: 20px;
+  padding: 0 6px;
+  background: var(--danger);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.7rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--bg);
+  line-height: 1;
+}
+
+.notif-modal-lista {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.notif-modal-empty {
+  text-align: center; padding: 32px 16px;
+  color: var(--text-muted);
+}
+.notif-modal-empty i { font-size: 2rem; margin-bottom: 10px; opacity: 0.6; }
+
+.notif-item {
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition), transform var(--transition);
+}
+.notif-item:hover { border-color: var(--primary); background: var(--surface-hover); }
+.notif-item.expandida {
+  background: var(--bg-elevated);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+}
+.notif-item.info    { border-left-color: var(--info); }
+.notif-item.success { border-left-color: var(--success); }
+.notif-item.warning { border-left-color: var(--warning); }
+.notif-item.danger  { border-left-color: var(--danger); }
+
+.notif-item-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; margin-bottom: 8px;
+}
+.notif-item-title {
+  display: flex; flex-direction: column; gap: 6px;
+  flex: 1; min-width: 0;
+}
+.notif-item-title strong {
+  color: var(--text); font-size: 0.95rem; font-weight: 700;
+}
+.notif-pill {
+  align-self: flex-start;
+  font-size: 0.66rem; font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+.notif-pill-info    { background: var(--info-soft);    color: var(--info); }
+.notif-pill-success { background: var(--success-soft); color: var(--success); }
+.notif-pill-warning { background: var(--warning-soft); color: var(--warning); }
+.notif-pill-danger  { background: var(--danger-soft);  color: var(--danger); }
+
+.notif-item-meta {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+}
+.notif-time { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+.notif-dismiss {
+  width: 28px; height: 28px; padding: 0;
+  background: transparent; color: var(--text-muted);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+}
+.notif-dismiss:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); box-shadow: none; }
+
+.notif-item-preview {
+  font-size: 0.88rem; color: var(--text-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.notif-item-full {
+  font-size: 0.95rem;
+  color: var(--text);
+  white-space: pre-wrap;
+  line-height: 1.6;
+  padding: 12px 14px;
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.notif-item-hint {
+  margin-top: 8px;
+  font-size: 0.72rem; color: var(--text-muted);
+  font-style: italic; text-align: right;
+}
