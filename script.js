@@ -2,8 +2,8 @@
    Teleflow / SupPaciente • v7.0 (Auditoria + correções solicitadas)
 
    PRINCIPAIS MUDANÇAS vs. v6.3:
-   • Senhas e firebaseConfig agora vêm de window.APP_CONFIG (config.local.js,
-     que está no .gitignore).
+   • Senhas e firebaseConfig voltaram para dentro do próprio código
+     (script.js / index.html). Não há mais config.local.js nem .gitignore.
    • Operador pode EDITAR um caso mesmo após o monitor assumi-lo. A edição
      só atualiza título/descrição/direcionamento (NUNCA reverte status ou
      monitorAtendente), então o card permanece visível para ambos.
@@ -41,11 +41,10 @@ function inlineTexto(v)  { return escapeHtml(v).replace(/\s+/g, " ").trim(); }
 window.escapeHtml = escapeHtml;
 
 // --------------------------------------------------------------------------
-// CONFIG (vem de config.local.js / .gitignore)
+// CONFIG
 // --------------------------------------------------------------------------
-const CFG = (window.APP_CONFIG) || {};
-const ADMIN_PASSWORD       = CFG.ADMIN_PASSWORD   ?? "";
-const MONITOR_PASSWORD     = CFG.MONITOR_PASSWORD ?? null;
+const ADMIN_PASSWORD       = "casemiro2026";
+const MONITOR_PASSWORD     = null; // null = aceita qualquer senha
 const HEARTBEAT_INTERVALO  = 25_000;
 const HEARTBEAT_EXPIRACAO  = 75_000;
 const CHAVE_NOTIF_LIDAS    = "teleflow_notif_dismissed";
@@ -767,9 +766,6 @@ window.concluirAlertaPresencialMock = function (id) {
 window.loginAdminMock = function () {
   const senha = document.getElementById("admin-senha-login")?.value;
   if (!senha) { window.lancarToast("Insira a senha administrativa.", "danger"); return; }
-  if (!ADMIN_PASSWORD) {
-    window.lancarToast("ADMIN_PASSWORD não configurado em config.local.js.", "danger"); return;
-  }
   if (senha !== ADMIN_PASSWORD) { window.lancarToast("Senha incorreta.", "danger"); return; }
 
   adminSessao = { logadoEm: Date.now() };
