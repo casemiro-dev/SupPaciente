@@ -1,35 +1,66 @@
 /* ==========================================================================
-   Teleflow • v6.1 (HOTFIX concorrência)
-   Correção crítica:
-   - Toda escrita no Firebase agora é GRANULAR por item (set/remove no path
-     específico do id). Antes, sincronizarStorage() fazia fbSet na raiz
-     inteira (teleflow_root), e com múltiplos usuários simultâneos a última
-     escrita sobrescrevia a árvore inteira com um snapshot defasado —
-     causando o "sumiço" de casos, alertas e notificações.
-   - sincronizarStorage() é mantido apenas como no-op de compatibilidade.
+   Teleflow / SupPaciente • v7.0 (Auditoria + correções solicitadas)
+
+   PRINCIPAIS MUDANÇAS vs. v6.3:
+   • Senhas e firebaseConfig agora vêm de window.APP_CONFIG (config.local.js,
+     que está no .gitignore).
+   • Operador pode EDITAR um caso mesmo após o monitor assumi-lo. A edição
+     só atualiza título/descrição/direcionamento (NUNCA reverte status ou
+     monitorAtendente), então o card permanece visível para ambos.
+   • Edição abre em um MODAL próprio (modal-editar-caso), não na aba de
+     criação de caso.
+   • Qualquer monitor pode finalizar um caso "Em Verificação", mesmo que
+     outro monitor o tenha assumido (evita travar a fila se o monitor
+     original saiu).
+   • Card fechado: descrição volta a fluir em linha corrida (estilo antigo),
+     com 3 linhas via line-clamp. Modal aberto continua exibindo quebras.
+   • CONSUMO DE BANCO: deixou de baixar a árvore inteira a cada mudança.
+     Agora usa listeners por coleção + onChildAdded/Changed/Removed para
+     'casos' (a maior coleção), com limitToLast(300). Render é debounced.
+   • Removido código morto: sincronizarStorage, caso-id-edicao, helpers
+     não usados.
    ========================================================================== */
 
-console.log("Teleflow v6.1 • Escrita granular por item (hotfix concorrência)");
+"use strict";
+console.log("Teleflow v7.0 • Correções aplicadas (edição+conclusão+layout+economia banco)");
 
 // --------------------------------------------------------------------------
-// CONFIG
+// HELPERS DE SEGURANÇA (anti-XSS)
 // --------------------------------------------------------------------------
-const ADMIN_PASSWORD       = "casemiro2026";
-const MONITOR_PASSWORD     = null;              // null = aceita qualquer senha
-const HEARTBEAT_INTERVALO  = 25_000;            // 25 s
-const HEARTBEAT_EXPIRACAO  = 75_000;            // 75 s sem heartbeat = offline
-const CHAVE_NOTIF_LIDAS    = "teleflow_notif_dismissed"; // local-only
+function escapeHtml(v) {
+  if (v === null || v === undefined) return "";
+  return String(v)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+function nl2br(v)        { return escapeHtml(v).replace(/\n/g, "<br>"); }
+function inlineTexto(v)  { return escapeHtml(v).replace(/\s+/g, " ").trim(); }
+window.escapeHtml = escapeHtml;
+
+// --------------------------------------------------------------------------
+// CONFIG (vem de config.local.js / .gitignore)
+// --------------------------------------------------------------------------
+const CFG = (window.APP_CONFIG) || {};
+const ADMIN_PASSWORD       = CFG.ADMIN_PASSWORD   ?? "";
+const MONITOR_PASSWORD     = CFG.MONITOR_PASSWORD ?? null;
+const HEARTBEAT_INTERVALO  = 25_000;
+const HEARTBEAT_EXPIRACAO  = 75_000;
+const CHAVE_NOTIF_LIDAS    = "teleflow_notif_dismissed";
+const CASOS_LIMITE         = 300; // máximo de casos baixados (mais recentes)
 
 // --------------------------------------------------------------------------
 // ESTADO
 // --------------------------------------------------------------------------
-let localDB = { casos: [], alertas_pa: [], monitores_online: [], notificacoes: [] };
-let controleTamanhoAntigo = { alertas: 0, notif: 0 };
+const localDB = { casos: {}, alertas_pa: [], monitores_online: [], notificacoes: [] };
+const controleTamanhoAntigo = { alertas: 0, notif: 0 };
 let arquivoAberto = false;
 let idCasoModalAberto = null;
 let heartbeatTimer = null;
 
-// Proteção: só permite escrita no Firebase após o primeiro snapshot.
+// Proteção: só permite escrita após o primeiro snapshot de cada coleção crítica.
 let firebaseCarregado = false;
 const filaPosCarga = [];
 
@@ -38,32 +69,80 @@ let monitorSessao  = JSON.parse(sessionStorage.getItem("teleflow_mon_session")) 
 let adminSessao    = JSON.parse(sessionStorage.getItem("teleflow_admin_session")) || null;
 
 // --------------------------------------------------------------------------
-// SINCRONISMO FIREBASE
+// RENDER COM DEBOUNCE (evita thrashing em rajadas do Firebase)
+// --------------------------------------------------------------------------
+let renderTimer = null;
+function agendarRender() {
+  if (renderTimer) return;
+  renderTimer = setTimeout(() => {
+    renderTimer = null;
+    window.renderizarTudo();
+    if (idCasoModalAberto) window.atualizarApenasTempoEStatusModal();
+  }, 80);
+}
+
+// --------------------------------------------------------------------------
+// SINCRONISMO FIREBASE — OTIMIZADO (per-collection + child events em 'casos')
+// --------------------------------------------------------------------------
+// ANTES: 1 listener onValue na RAIZ → cada mudança baixava a árvore inteira.
+//        Era a causa principal dos 3+ GB/dia de download.
+// AGORA: cada coleção tem seu listener. 'casos' usa child events + limit:
+//        - download inicial = só os N casos mais recentes
+//        - cada update subsequente = só o caso alterado (não a árvore toda)
 // --------------------------------------------------------------------------
 window.inicializarSincronismoFirebase = function () {
   if (!window.fbDB) return;
-  const dbRef = window.fbRef(window.fbDB, "teleflow_root");
 
-  window.fbOnValue(dbRef, (snapshot) => {
-    const dados = snapshot.val();
+  // ---------- CASOS: listeners por filho + limite ----------
+  const casosRef = window.fbQuery(
+    window.fbRef(window.fbDB, "teleflow_sandbox/casos"),
+    window.fbOrderByChild("timestamp"),
+    window.fbLimitToLast(CASOS_LIMITE)
+  );
 
-    localDB.casos             = dados?.casos             ? Object.values(dados.casos)             : [];
-    localDB.alertas_pa        = dados?.alertas_pa        ? Object.values(dados.alertas_pa)        : [];
-    localDB.monitores_online  = dados?.monitores_online  ? Object.values(dados.monitores_online)  : [];
-    localDB.notificacoes      = dados?.notificacoes      ? Object.values(dados.notificacoes)      : [];
+  window.fbOnChildAdded(casosRef, (snap) => {
+    const c = snap.val(); if (!c || !c.id) return;
+    localDB.casos[c.id] = c;
+    agendarRender();
+  });
+  window.fbOnChildChanged(casosRef, (snap) => {
+    const c = snap.val(); if (!c || !c.id) return;
+    localDB.casos[c.id] = c;
+    agendarRender();
+  });
+  window.fbOnChildRemoved(casosRef, (snap) => {
+    const id = snap.key || (snap.val() && snap.val().id);
+    if (id) delete localDB.casos[id];
+    agendarRender();
+  });
 
-    // Alerta presencial novo
-    if (localDB.alertas_pa.length > controleTamanhoAntigo.alertas) {
-      const ultimo = localDB.alertas_pa[localDB.alertas_pa.length - 1];
-      if (ultimo && ultimo.status === "Aguardando" && monitorSessao) {
+  // ---------- COLEÇÕES PEQUENAS: onValue normal ----------
+  window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/alertas_pa"), (snap) => {
+    const v = snap.val();
+    localDB.alertas_pa = v ? Object.values(v) : [];
+    localDB.alertas_pa.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    if (localDB.alertas_pa.length > controleTamanhoAntigo.alertas && monitorSessao) {
+      const ultimo = localDB.alertas_pa[0];
+      if (ultimo && ultimo.status === "Aguardando") {
         window.lancarNotificacaoVisualMonitor(
           `ALERTA CRÍTICO: PA ${ultimo.pa} (${ultimo.operador}) solicita suporte presencial!`
         );
       }
     }
     controleTamanhoAntigo.alertas = localDB.alertas_pa.length;
+    agendarRender();
+  });
 
-    // Novo comunicado admin para operador
+  window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/monitores_online"), (snap) => {
+    const v = snap.val();
+    localDB.monitores_online = v ? Object.values(v) : [];
+    agendarRender();
+  });
+
+  window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/notificacoes"), (snap) => {
+    const v = snap.val();
+    localDB.notificacoes = v ? Object.values(v) : [];
     if (operadorSessao && localDB.notificacoes.length > controleTamanhoAntigo.notif && controleTamanhoAntigo.notif > 0) {
       const ultima = [...localDB.notificacoes].sort((a,b) => b.timestamp - a.timestamp)[0];
       if (ultima) window.lancarToast(`📢 Novo comunicado: ${ultima.titulo || ultima.mensagem}`, ultima.tipo || "info");
@@ -76,18 +155,32 @@ window.inicializarSincronismoFirebase = function () {
         try { filaPosCarga.shift()(); } catch (e) { console.error(e); }
       }
     }
-
-    window.renderizarTudo();
-    if (idCasoModalAberto) window.atualizarApenasTempoEStatusModal();
+    agendarRender();
   });
+
+  // Marca carregado em até 4s mesmo se 'notificacoes' estiver vazio
+  setTimeout(() => {
+    if (!firebaseCarregado) {
+      firebaseCarregado = true;
+      while (filaPosCarga.length) {
+        try { filaPosCarga.shift()(); } catch (e) { console.error(e); }
+      }
+      agendarRender();
+    }
+  }, 4_000);
+
+  // Timeout duro de 10s para feedback visual
+  setTimeout(() => {
+    if (!firebaseCarregado) {
+      console.error("[Sincronismo] Firebase não respondeu em 10s.");
+      window.lancarToast("Sem conexão com o servidor. Verifique sua internet e recarregue a página (F5).", "danger");
+    }
+  }, 10_000);
 };
 
-/* ----------------------------------------------------------------------
-   ESCRITA GRANULAR (hotfix v6.1)
-   Cada mutação grava SOMENTE o item alterado no path específico do id.
-   Isso evita que dois clientes sobrescrevam a árvore inteira com snapshots
-   defasados — causa raiz do sumiço de casos relatado em produção.
-   ---------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// ESCRITAS GRANULARES
+// --------------------------------------------------------------------------
 function _podeEscrever() {
   if (!window.fbDB) return false;
   if (!firebaseCarregado) {
@@ -100,14 +193,14 @@ function _podeEscrever() {
 window.salvarItem = function (secao, item) {
   if (!_podeEscrever() || !item || !item.id) return;
   try {
-    window.fbSet(window.fbRef(window.fbDB, `teleflow_root/${secao}/${item.id}`), item);
+    window.fbSet(window.fbRef(window.fbDB, `teleflow_sandbox/${secao}/${item.id}`), item);
   } catch (e) { console.error("[salvarItem]", secao, e); }
 };
 
 window.removerItem = function (secao, id) {
   if (!_podeEscrever() || !id) return;
   try {
-    window.fbRemove(window.fbRef(window.fbDB, `teleflow_root/${secao}/${id}`));
+    window.fbRemove(window.fbRef(window.fbDB, `teleflow_sandbox/${secao}/${id}`));
   } catch (e) { console.error("[removerItem]", secao, id, e); }
 };
 
@@ -115,18 +208,35 @@ window.removerVarios = function (secao, ids) {
   if (!_podeEscrever() || !ids || !ids.length) return;
   try {
     const updates = {};
-    ids.forEach(id => { updates[`teleflow_root/${secao}/${id}`] = null; });
+    ids.forEach(id => { updates[`teleflow_sandbox/${secao}/${id}`] = null; });
     window.fbUpdate(window.fbRef(window.fbDB, "/"), updates);
   } catch (e) { console.error("[removerVarios]", secao, e); }
 };
 
-// Mantido apenas por compatibilidade — NÃO usar mais; era a causa do bug.
-window.sincronizarStorage = function () { /* no-op desde v6.1 */ };
+window.atualizarCampos = function (secao, id, campos) {
+  if (!_podeEscrever() || !id || !campos) return;
+  try {
+    const updates = {};
+    Object.keys(campos).forEach(k => {
+      updates[`teleflow_sandbox/${secao}/${id}/${k}`] = campos[k];
+    });
+    window.fbUpdate(window.fbRef(window.fbDB, "/"), updates);
+  } catch (e) { console.error("[atualizarCampos]", secao, id, e); }
+};
 
 function aposFirebaseCarregar(fn) {
   if (firebaseCarregado) fn();
   else filaPosCarga.push(fn);
 }
+
+// --------------------------------------------------------------------------
+// HELPER: lista ordenada de casos a partir do dicionário interno
+// --------------------------------------------------------------------------
+function listaCasos() {
+  return Object.values(localDB.casos)
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+}
+function buscarCaso(id) { return localDB.casos[id] || null; }
 
 // --------------------------------------------------------------------------
 // NAVEGAÇÃO / HELPERS
@@ -157,7 +267,7 @@ window.lancarToast = function (mensagem, tipo = "info") {
   };
   const toast = document.createElement("div");
   toast.className = `toast ${tipo}`;
-  toast.innerHTML = `${icones[tipo] || icones.info} <span>${mensagem}</span>`;
+  toast.innerHTML = `${icones[tipo] || icones.info} <span>${escapeHtml(mensagem)}</span>`;
   container.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add("show"));
   setTimeout(() => { toast.classList.remove("show"); setTimeout(() => toast.remove(), 300); }, 4500);
@@ -205,12 +315,6 @@ window.aplicarScript = function (tipo) {
 // --------------------------------------------------------------------------
 // MULTI-SESSÃO DO MONITOR + HEARTBEAT
 // --------------------------------------------------------------------------
-/**
- * Lista de monitores únicos por nome, ativos (com heartbeat válido).
- * Status agregado: se qualquer sessão estiver "Disponível", o monitor
- * aparece como Disponível; se TODAS as sessões estiverem em "Não Perturbe",
- * aparece como Indisponível.
- */
 function getMonitoresAtivosUnicos() {
   const agora = Date.now();
   const ativos = localDB.monitores_online.filter(m =>
@@ -219,9 +323,8 @@ function getMonitoresAtivosUnicos() {
   const porNome = new Map();
   ativos.forEach(m => {
     const atual = porNome.get(m.nome);
-    if (!atual) {
-      porNome.set(m.nome, { nome: m.nome, status: m.status || "Disponível", sessoes: 1 });
-    } else {
+    if (!atual) porNome.set(m.nome, { nome: m.nome, status: m.status || "Disponível", sessoes: 1 });
+    else {
       atual.sessoes++;
       if (m.status === "Disponível") atual.status = "Disponível";
     }
@@ -239,10 +342,6 @@ function dispararHeartbeat() {
       status: monitorSessao.status,
       lastSeen: Date.now(),
     };
-    const idx = localDB.monitores_online.findIndex(m => m.id === monitorSessao.id);
-    if (idx === -1) localDB.monitores_online.push(registro);
-    else localDB.monitores_online[idx] = registro;
-    // Escrita granular: apenas a MINHA sessão.
     window.salvarItem("monitores_online", registro);
   });
 }
@@ -257,7 +356,7 @@ function pararHeartbeat() {
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
 }
 
-// Limpeza periódica APENAS de sessões fantasmas (sem heartbeat) — nunca de casos.
+// Limpa sessões fantasmas (apenas elas — nunca casos)
 setInterval(() => {
   if (!firebaseCarregado) return;
   const agora = Date.now();
@@ -266,19 +365,14 @@ setInterval(() => {
   );
   if (fantasmas.length) {
     const ids = fantasmas.map(m => m.id);
-    localDB.monitores_online = localDB.monitores_online.filter(m => !ids.includes(m.id));
     window.removerVarios("monitores_online", ids);
   }
-  window.renderizarTudo();
 }, 30_000);
 
-// Ao fechar a aba: remove apenas a sessão DESTA aba (não derruba outras)
 window.addEventListener("beforeunload", () => {
   if (!monitorSessao || !window.fbDB) return;
   try {
-    window.fbRemove(window.fbRef(
-      window.fbDB, `teleflow_root/monitores_online/${monitorSessao.id}`
-    ));
+    window.fbRemove(window.fbRef(window.fbDB, `teleflow_sandbox/monitores_online/${monitorSessao.id}`));
   } catch (e) {}
 });
 
@@ -312,9 +406,9 @@ window.limparSessaoESairMock = function () {
   window.irPara("tela-login");
 };
 
+// SEMPRE cria caso novo. Edição agora é via modal-editar-caso.
 window.enviarCasoMock = function () {
   if (!operadorSessao) return;
-  const inputId = document.getElementById("caso-id-edicao");
   const inputTitulo = document.getElementById("caso-titulo");
   const inputDesc = document.getElementById("caso-descricao");
   const selectMonitor = document.getElementById("caso-monitor-direcionado");
@@ -325,64 +419,99 @@ window.enviarCasoMock = function () {
 
   if (!titulo || !descricao) { window.lancarToast("Preencha o título e a descrição do caso.", "danger"); return; }
 
-  let casoParaSalvar = null;
-
-  if (inputId && inputId.value) {
-    const idx = localDB.casos.findIndex((c) => c.id === inputId.value);
-    if (idx !== -1) {
-      Object.assign(localDB.casos[idx], { titulo, descricao, monitorDirecionado });
-      casoParaSalvar = localDB.casos[idx];
-      window.lancarToast("Chamado atualizado com sucesso.", "success");
-    }
-    inputId.value = "";
-    document.getElementById("btn-enviar-chamado").innerHTML = '<i class="fa-solid fa-paper-plane"></i> Transmitir para fila de triagem';
-    document.getElementById("label-status-formulario").innerText = "Assunto / título do caso";
-  } else {
-    casoParaSalvar = {
-      id: "C-" + Date.now() + "-" + Math.floor(1000 + Math.random() * 9000),
-      operador: operadorSessao.nome,
-      pa: operadorSessao.pa,
-      titulo, descricao, monitorDirecionado,
-      status: "Pendente",
-      timestamp: Date.now(),
-      monitorAtendente: "",
-      respostaFeedback: "",
-    };
-    localDB.casos.unshift(casoParaSalvar);
-    window.lancarToast("Caso enviado para triagem.", "success");
-  }
+  const caso = {
+    id: "C-" + Date.now() + "-" + Math.floor(1000 + Math.random() * 9000),
+    operador: operadorSessao.nome,
+    pa: operadorSessao.pa,
+    titulo, descricao, monitorDirecionado,
+    status: "Pendente",
+    timestamp: Date.now(),
+    monitorAtendente: "",
+    respostaFeedback: "",
+  };
+  localDB.casos[caso.id] = caso;
+  window.salvarItem("casos", caso);
+  window.lancarToast("Caso enviado para triagem.", "success");
 
   if (inputTitulo) inputTitulo.value = "";
   if (inputDesc) inputDesc.value = "";
   if (selectMonitor) selectMonitor.value = "";
-  if (casoParaSalvar) window.salvarItem("casos", casoParaSalvar);
 };
 
+/* --------------------------------------------------------------------------
+   EDIÇÃO DO CASO (operador) — agora em modal próprio.
+   Permitida em Pendente E em "Em Verificação" (atualiza só título/desc/
+   direcionamento; nunca toca status nem monitorAtendente). Apenas
+   "Concluído" não pode ser editado.
+   -------------------------------------------------------------------------- */
 window.editarCasoOperadorMock = function (id) {
-  const caso = localDB.casos.find((c) => c.id === id);
-  if (!caso) return;
-  if (caso.status !== "Pendente") { window.lancarToast("Este chamado já está em atendimento.", "danger"); return; }
+  const caso = buscarCaso(id);
+  if (!caso) { window.lancarToast("Caso não encontrado.", "danger"); return; }
+  if (caso.status === "Concluído") {
+    window.lancarToast("Este chamado já foi concluído e não pode ser editado.", "warning");
+    return;
+  }
 
-  document.getElementById("caso-id-edicao").value = caso.id;
-  document.getElementById("caso-titulo").value = caso.titulo;
-  document.getElementById("caso-descricao").value = caso.descricao;
-  document.getElementById("caso-monitor-direcionado").value = caso.monitorDirecionado || "";
-  document.getElementById("btn-enviar-chamado").innerHTML = '<i class="fa-solid fa-pen-to-square"></i> Salvar alterações';
-  document.getElementById("label-status-formulario").innerHTML = 'Assunto / título do caso <span style="color:var(--warning); font-size:0.75rem;">(modo edição)</span>';
+  document.getElementById("editar-caso-id").value = caso.id;
+  document.getElementById("editar-caso-titulo").value = caso.titulo || "";
+  document.getElementById("editar-caso-descricao").value = caso.descricao || "";
+  document.getElementById("editar-caso-monitor").value = caso.monitorDirecionado || "";
 
-  window.lancarToast("Dados do chamado carregados.", "info");
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  const aviso = document.getElementById("editar-caso-aviso");
+  if (caso.status === "Em Verificação") {
+    aviso.style.display = "block";
+    aviso.innerHTML = `<i class="fa-solid fa-circle-info"></i> Este caso já foi assumido por <strong>${escapeHtml(caso.monitorAtendente || "um monitor")}</strong>. Suas alterações serão atualizadas para o monitor sem retirar o caso da tratativa.`;
+  } else {
+    aviso.style.display = "none";
+    aviso.innerHTML = "";
+  }
+
+  document.getElementById("modal-editar-caso").classList.add("open");
+};
+
+window.fecharModalEdicaoCaso = function () {
+  document.getElementById("modal-editar-caso")?.classList.remove("open");
+};
+
+window.salvarEdicaoCaso = function () {
+  const id = document.getElementById("editar-caso-id").value;
+  if (!id) return;
+  const caso = buscarCaso(id);
+  if (!caso) { window.lancarToast("Caso não está mais disponível.", "warning"); window.fecharModalEdicaoCaso(); return; }
+  if (caso.status === "Concluído") {
+    window.lancarToast("Este chamado já foi concluído.", "warning");
+    window.fecharModalEdicaoCaso();
+    return;
+  }
+
+  const titulo = document.getElementById("editar-caso-titulo").value.trim();
+  const descricao = document.getElementById("editar-caso-descricao").value.trim();
+  const monitorDirecionado = document.getElementById("editar-caso-monitor").value || "";
+
+  if (!titulo || !descricao) { window.lancarToast("Preencha o título e a descrição.", "danger"); return; }
+
+  // Escrita por campo: status e monitorAtendente NUNCA são tocados,
+  // por isso o caso continua na fila do monitor que assumiu.
+  Object.assign(caso, { titulo, descricao, monitorDirecionado });
+  window.atualizarCampos("casos", id, { titulo, descricao, monitorDirecionado });
+  window.lancarToast("Chamado atualizado com sucesso.", "success");
+  window.fecharModalEdicaoCaso();
 };
 
 window.cancelarCasoOperadorMock = function (id) {
-  const caso = localDB.casos.find((c) => c.id === id);
+  const caso = buscarCaso(id);
   if (!caso) return;
   if (caso.status !== "Pendente") { window.lancarToast("Não é possível cancelar um chamado em andamento.", "danger"); return; }
-  if (confirm("Deseja realmente cancelar e excluir este chamado?")) {
-    localDB.casos = localDB.casos.filter((c) => c.id !== id);
-    window.removerItem("casos", id);
-    window.lancarToast("Chamado removido da fila.", "info");
+  if (!confirm("Deseja realmente cancelar e excluir este chamado?")) return;
+  const atual = buscarCaso(id);
+  if (!atual) { window.lancarToast("Chamado não está mais disponível.", "warning"); return; }
+  if (atual.status !== "Pendente") {
+    window.lancarToast(`Não foi possível cancelar: o chamado agora está "${atual.status}".`, "warning");
+    return;
   }
+  delete localDB.casos[id];
+  window.removerItem("casos", id);
+  window.lancarToast("Chamado removido da fila.", "info");
 };
 
 window.chamarMonitorMock = function () {
@@ -406,7 +535,6 @@ window.cancelarAlertaPresencialOperadorMock = function (id) {
   window.lancarToast("Solicitação cancelada.", "info");
 };
 
-// Dispensa LOCAL (não apaga do banco — outros operadores continuam vendo)
 window.dispensarComunicado = function (id) {
   const lidas = JSON.parse(localStorage.getItem(CHAVE_NOTIF_LIDAS) || "[]");
   if (!lidas.includes(id)) lidas.push(id);
@@ -469,26 +597,26 @@ window.renderizarModalNotificacoes = function () {
   }
   cont.innerHTML = ativas.map(n => {
     const expandida = notifExpandidaId === n.id;
-    const tipo = n.tipo || "info";
+    const tipo = (n.tipo || "info").replace(/[^a-z]/gi, "");
     const titulo = n.titulo || "Comunicado";
     return `
-      <div class="notif-item ${tipo} ${expandida ? 'expandida' : ''}" onclick="expandirNotificacao('${n.id}')">
+      <div class="notif-item ${tipo} ${expandida ? 'expandida' : ''}" onclick="expandirNotificacao('${escapeHtml(n.id)}')">
         <div class="notif-item-header">
           <div class="notif-item-title">
             <span class="notif-pill notif-pill-${tipo}">${tipo.toUpperCase()}</span>
-            <strong>${titulo}</strong>
+            <strong>${escapeHtml(titulo)}</strong>
           </div>
           <div class="notif-item-meta">
             <span class="notif-time">${new Date(n.timestamp).toLocaleString("pt-BR")}</span>
-            <button class="notif-dismiss" onclick="event.stopPropagation(); dispensarComunicado('${n.id}')" title="Marcar como lido para mim">
+            <button class="notif-dismiss" onclick="event.stopPropagation(); dispensarComunicado('${escapeHtml(n.id)}')" title="Marcar como lido para mim">
               <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
         </div>
         <div class="notif-item-body">
           ${expandida
-            ? `<div class="notif-item-full">${n.mensagem}</div>`
-            : `<div class="notif-item-preview">${n.mensagem}</div>`}
+            ? `<div class="notif-item-full">${nl2br(n.mensagem)}</div>`
+            : `<div class="notif-item-preview">${nl2br(n.mensagem)}</div>`}
         </div>
         ${!expandida ? `<div class="notif-item-hint">Toque para expandir</div>` : ''}
       </div>`;
@@ -511,29 +639,20 @@ window.loginMonitorMock = function () {
   const sessionId = gerarSessionId();
   monitorSessao = {
     id: "M-" + nome.toLowerCase() + "-" + sessionId,
-    sessionId,
-    nome,
-    status: "Disponível",
+    sessionId, nome, status: "Disponível",
   };
   sessionStorage.setItem("teleflow_mon_session", JSON.stringify(monitorSessao));
 
   aposFirebaseCarregar(() => {
-    const registro = {
-      id: monitorSessao.id,
-      sessionId,
-      nome,
-      status: "Disponível",
-      lastSeen: Date.now(),
-    };
-    // NÃO remove outras sessões do mesmo nome — multi-PC suportado.
-    localDB.monitores_online.push(registro);
-    window.salvarItem("monitores_online", registro);
+    window.salvarItem("monitores_online", {
+      id: monitorSessao.id, sessionId, nome, status: "Disponível", lastSeen: Date.now(),
+    });
   });
 
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
 
   document.getElementById("txt-nome-monitor-logado").innerHTML =
-    `<i class="fa-solid fa-user-shield"></i> Monitor conectado: <strong>${nome}</strong>`;
+    `<i class="fa-solid fa-user-shield"></i> Monitor conectado: <strong>${escapeHtml(nome)}</strong>`;
   document.getElementById("monitor-senha-login").value = "";
   document.getElementById("monitor-nome-login").value = "";
 
@@ -544,9 +663,7 @@ window.loginMonitorMock = function () {
 
 window.deslogarMonitorMock = function () {
   if (monitorSessao) {
-    // Remove APENAS esta sessão; outras abas/PCs do mesmo nome continuam ativas.
     const idSair = monitorSessao.id;
-    localDB.monitores_online = localDB.monitores_online.filter((m) => m.id !== idSair);
     window.removerItem("monitores_online", idSair);
   }
   pararHeartbeat();
@@ -559,46 +676,69 @@ window.alterarStatusMonitorMock = function (novoStatus) {
   if (!monitorSessao) return;
   monitorSessao.status = novoStatus;
   sessionStorage.setItem("teleflow_mon_session", JSON.stringify(monitorSessao));
-  const idx = localDB.monitores_online.findIndex((m) => m.id === monitorSessao.id);
-  let registro;
-  if (idx !== -1) {
-    localDB.monitores_online[idx].status = novoStatus;
-    localDB.monitores_online[idx].lastSeen = Date.now();
-    registro = localDB.monitores_online[idx];
-  } else {
-    registro = {
-      id: monitorSessao.id, sessionId: monitorSessao.sessionId,
-      nome: monitorSessao.nome, status: novoStatus, lastSeen: Date.now(),
-    };
-    localDB.monitores_online.push(registro);
-  }
+  const registro = {
+    id: monitorSessao.id, sessionId: monitorSessao.sessionId,
+    nome: monitorSessao.nome, status: novoStatus, lastSeen: Date.now(),
+  };
   const optDisp = document.getElementById("status-opt-disp");
   const optNp = document.getElementById("status-opt-np");
   if (optDisp) optDisp.className = novoStatus === "Disponível" ? "status-opt active-disp" : "status-opt";
   if (optNp)   optNp.className   = novoStatus === "Não Perturbe" ? "status-opt active-np" : "status-opt";
-
   window.lancarToast(`Status alterado: ${novoStatus === "Disponível" ? "Disponível" : "Indisponível"}`, "info");
   window.salvarItem("monitores_online", registro);
 };
 
 window.atenderCasoMonitorMock = function (id) {
   if (!monitorSessao) return;
-  const caso = localDB.casos.find((c) => c.id === id);
+  const caso = buscarCaso(id);
   if (!caso) return;
+  if (caso.status === "Concluído") {
+    window.lancarToast("Este chamado já foi concluído.", "warning"); return;
+  }
+  if (caso.status === "Em Verificação") {
+    // Mesmo que outro monitor tenha assumido, abrimos o modal para que
+    // qualquer monitor possa visualizar e (se necessário) concluir.
+    window.abrirModalCaso(id);
+    return;
+  }
   caso.status = "Em Verificação";
   caso.monitorAtendente = monitorSessao.nome;
-  window.salvarItem("casos", caso);
+  window.atualizarCampos("casos", id, {
+    status: "Em Verificação",
+    monitorAtendente: monitorSessao.nome,
+  });
   window.lancarToast(`Você assumiu a tratativa do chamado ${id}.`, "success");
   window.abrirModalCaso(id);
 };
 
+/*
+ * concluirCasoMonitorMock
+ * Qualquer monitor logado pode finalizar, mesmo que outro monitor tenha
+ * assumido (cenário: Monitor A foi embora deixando aberto, Monitor B fecha).
+ * Registramos quem efetivamente concluiu em monitorAtendente para que o
+ * relatório/visualização reflita a realidade.
+ */
 window.concluirCasoMonitorMock = function (id, feedbackTexto) {
-  const caso = localDB.casos.find((c) => c.id === id);
+  const caso = buscarCaso(id);
   if (!caso) return;
+  if (!monitorSessao) { window.lancarToast("Faça login como monitor para concluir.", "danger"); return; }
+  if (caso.status === "Concluído") { window.lancarToast("Caso já está concluído.", "warning"); return; }
+
+  const resposta = feedbackTexto || "Atendimento avaliado e concluído pela supervisão.";
+  const concluidoEm = Date.now();
+  const quemConclui = monitorSessao.nome;
+
   caso.status = "Concluído";
-  caso.respostaFeedback = feedbackTexto || "Atendimento avaliado e concluído pela supervisão.";
-  caso.concluidoEm = Date.now();
-  window.salvarItem("casos", caso);
+  caso.respostaFeedback = resposta;
+  caso.concluidoEm = concluidoEm;
+  caso.monitorAtendente = quemConclui; // quem finalizou de fato
+
+  window.atualizarCampos("casos", id, {
+    status: "Concluído",
+    respostaFeedback: resposta,
+    concluidoEm: concluidoEm,
+    monitorAtendente: quemConclui,
+  });
   window.lancarToast(`Chamado ${id} solucionado.`, "success");
 };
 
@@ -608,7 +748,10 @@ window.atenderAlertaPresencialMock = function (id) {
   if (!alerta) return;
   alerta.status = "Em Atendimento";
   alerta.monitorAtendente = monitorSessao.nome;
-  window.salvarItem("alertas_pa", alerta);
+  window.atualizarCampos("alertas_pa", id, {
+    status: "Em Atendimento",
+    monitorAtendente: monitorSessao.nome,
+  });
   window.lancarToast(`Deslocamento registrado para a PA ${alerta.pa}.`, "info");
 };
 
@@ -624,6 +767,9 @@ window.concluirAlertaPresencialMock = function (id) {
 window.loginAdminMock = function () {
   const senha = document.getElementById("admin-senha-login")?.value;
   if (!senha) { window.lancarToast("Insira a senha administrativa.", "danger"); return; }
+  if (!ADMIN_PASSWORD) {
+    window.lancarToast("ADMIN_PASSWORD não configurado em config.local.js.", "danger"); return;
+  }
   if (senha !== ADMIN_PASSWORD) { window.lancarToast("Senha incorreta.", "danger"); return; }
 
   adminSessao = { logadoEm: Date.now() };
@@ -649,7 +795,6 @@ window.trocarAbaAdmin = function (aba) {
 
 window.forcarLogoutMonitorAdmin = function (monitorId, monitorNome) {
   if (!confirm(`Forçar desconexão desta sessão de ${monitorNome}?`)) return;
-  localDB.monitores_online = localDB.monitores_online.filter(m => m.id !== monitorId);
   window.removerItem("monitores_online", monitorId);
   window.lancarToast(`Sessão de ${monitorNome} desconectada.`, "info");
 };
@@ -685,7 +830,7 @@ window.removerNotificacaoAdmin = function (id) {
 // --------------------------------------------------------------------------
 function inicioDoDiaTs() { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); }
 
-function filtrarCasosPorPeriodo(periodo, base = localDB.casos) {
+function filtrarCasosPorPeriodo(periodo, base = listaCasos()) {
   const agora = Date.now();
   let limite = 0;
   if (periodo === "hoje")   limite = inicioDoDiaTs();
@@ -702,18 +847,13 @@ window.exportarRelatorioJSON = function () {
 
   const payload = {
     geradoEm: new Date().toISOString(),
-    periodo,
-    totalCasos: casos.length,
+    periodo, totalCasos: casos.length,
     casos: casos.map(c => ({
-      id: c.id,
-      operador: c.operador,
-      pa: c.pa,
-      titulo: c.titulo,
-      descricao: c.descricao,
+      id: c.id, operador: c.operador, pa: c.pa,
+      titulo: c.titulo, descricao: c.descricao,
       monitorDirecionado: c.monitorDirecionado || null,
       monitorAtendente: c.monitorAtendente || null,
-      status: c.status,
-      respostaFeedback: c.respostaFeedback || null,
+      status: c.status, respostaFeedback: c.respostaFeedback || null,
       criadoEm: c.timestamp ? new Date(c.timestamp).toISOString() : null,
       concluidoEm: c.concluidoEm ? new Date(c.concluidoEm).toISOString() : null,
     })),
@@ -731,9 +871,7 @@ window.exportarRelatorioJSON = function () {
 
 window.apagarConcluidosAdmin = function () {
   const periodo = document.getElementById("limpeza-periodo")?.value || "hoje";
-  // Seleciona SOMENTE concluídos dentro do período.
   const alvos = filtrarCasosPorPeriodo(periodo).filter(c => c.status === "Concluído");
-
   if (alvos.length === 0) {
     window.lancarToast("Nenhum caso concluído encontrado nesse período.", "warning");
     return;
@@ -754,15 +892,9 @@ window.apagarConcluidosAdmin = function () {
   if (!ok) return;
 
   const idsApagar = alvos.map(c => c.id);
-  const setIds = new Set(idsApagar);
-  const antes = localDB.casos.length;
-  localDB.casos = localDB.casos.filter(c => !setIds.has(c.id));
-  const removidos = antes - localDB.casos.length;
-
-  // Apaga SOMENTE os ids selecionados (concluídos do período). Pendentes
-  // e Em Verificação não são tocados em hipótese alguma.
+  idsApagar.forEach(id => delete localDB.casos[id]);
   window.removerVarios("casos", idsApagar);
-  window.lancarToast(`${removidos} caso(s) concluído(s) apagado(s).`, "success");
+  window.lancarToast(`${idsApagar.length} caso(s) concluído(s) apagado(s).`, "success");
   atualizarPreviewLimpeza();
 };
 
@@ -789,10 +921,10 @@ function atualizarPreviewLimpeza() {
 }
 
 // --------------------------------------------------------------------------
-// MODAL DETALHE
+// MODAL DETALHE DO CASO
 // --------------------------------------------------------------------------
 window.abrirModalCaso = function (id) {
-  const caso = localDB.casos.find((c) => c.id === id);
+  const caso = buscarCaso(id);
   if (!caso) return;
   idCasoModalAberto = id;
   const modal = document.getElementById("modal-detalhe-caso");
@@ -801,14 +933,16 @@ window.abrirModalCaso = function (id) {
   document.getElementById("modal-titulo-caso").innerText = caso.titulo;
   document.getElementById("modal-descricao-caso").innerText = caso.descricao;
   document.getElementById("modal-op-pa").innerHTML =
-    `<i class="fa-solid fa-headset"></i> Operador: <strong>${caso.operador}</strong> (PA ${caso.pa})`;
+    `<i class="fa-solid fa-headset"></i> Operador: <strong>${escapeHtml(caso.operador)}</strong> (PA ${escapeHtml(caso.pa)})`;
 
   const areaTratativa = document.getElementById("modal-area-tratativa");
   const areaResposta = document.getElementById("modal-area-resposta-concluida");
   const inputFeedback = document.getElementById("modal-input-feedback");
   const btnFinalizar = document.getElementById("modal-btn-finalizar");
 
-  if (caso.status === "Em Verificação" && monitorSessao && caso.monitorAtendente === monitorSessao.nome) {
+  // Mostra área de tratativa para QUALQUER monitor logado quando o caso
+  // estiver Em Verificação — assim Monitor B pode finalizar caso de A.
+  if (caso.status === "Em Verificação" && monitorSessao) {
     areaTratativa.style.display = "block";
     areaResposta.style.display = "none";
     inputFeedback.value = "";
@@ -822,8 +956,8 @@ window.abrirModalCaso = function (id) {
     areaTratativa.style.display = "none";
     areaResposta.style.display = "block";
     areaResposta.innerHTML =
-      `<strong><i class="fa-solid fa-user-shield"></i> Solucionado por ${caso.monitorAtendente}:</strong>` +
-      `<p style="margin-top:8px;">${caso.respostaFeedback}</p>`;
+      `<strong><i class="fa-solid fa-user-shield"></i> Solucionado por ${escapeHtml(caso.monitorAtendente)}:</strong>` +
+      `<p style="margin-top:8px;">${nl2br(caso.respostaFeedback)}</p>`;
   } else {
     areaTratativa.style.display = "none";
     areaResposta.style.display = "none";
@@ -840,12 +974,10 @@ window.fecharModalCaso = function () {
 
 window.copiarConteudoCasoModal = function () {
   if (!idCasoModalAberto) return;
-  const caso = localDB.casos.find(c => c.id === idCasoModalAberto);
+  const caso = buscarCaso(idCasoModalAberto);
   if (!caso) return;
-
   const conteudo = `${caso.titulo}\n\n${caso.descricao}`;
   const btn = document.querySelector(".btn-icon-copy");
-
   const okVisual = () => {
     if (!btn) return;
     const html = btn.innerHTML;
@@ -853,7 +985,6 @@ window.copiarConteudoCasoModal = function () {
     btn.innerHTML = '<i class="fa-solid fa-check"></i>';
     setTimeout(() => { btn.classList.remove("copiado"); btn.innerHTML = html; }, 1600);
   };
-
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(conteudo).then(() => {
       window.lancarToast("Conteúdo copiado para a área de transferência.", "success");
@@ -877,13 +1008,13 @@ function fallbackCopiar(texto, cb) {
 
 window.atualizarApenasTempoEStatusModal = function () {
   if (!idCasoModalAberto) return;
-  const caso = localDB.casos.find((c) => c.id === idCasoModalAberto);
+  const caso = buscarCaso(idCasoModalAberto);
   const el = document.getElementById("modal-timer-status");
   if (!caso || !el) return;
   const minPassados = Math.floor((Date.now() - caso.timestamp) / 60000);
   let badge = "";
   if (caso.status === "Pendente")       badge = `<span class="badge warning">Aguardando (${minPassados}m)</span>`;
-  if (caso.status === "Em Verificação") badge = `<span class="badge info">Em tratativa por ${caso.monitorAtendente} (${minPassados}m)</span>`;
+  if (caso.status === "Em Verificação") badge = `<span class="badge info">Em tratativa por ${escapeHtml(caso.monitorAtendente)} (${minPassados}m)</span>`;
   if (caso.status === "Concluído")      badge = `<span class="badge success">Solucionado</span>`;
   el.innerHTML = badge;
 };
@@ -894,35 +1025,33 @@ window.atualizarApenasTempoEStatusModal = function () {
 window.renderizarTudo = function () {
   const min = (t) => Math.floor((Date.now() - t) / 60000);
   const monitoresAtivos = getMonitoresAtivosUnicos();
+  const casos = listaCasos();
 
-  // 1. Monitores online (visão do operador)
+  // 1. Monitores online (operador)
   const gridMonitores = document.getElementById("grid-monitores-online");
   if (gridMonitores && operadorSessao) {
     if (monitoresAtivos.length === 0) {
       gridMonitores.innerHTML =
         `<div style="grid-column:1/-1; color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum monitor conectado no momento. Suas requisições entram na fila global.</div>`;
     } else {
-      gridMonitores.innerHTML = monitoresAtivos
-        .map(m => {
-          const indisp = m.status !== "Disponível";
-          const sufixo = indisp ? " (Indisponível)" : "";
-          return `
-            <div class="monitor-status-card ${indisp ? 'np' : 'disp'}">
-              <strong>${m.nome}${sufixo}</strong>
-              <span>${indisp ? 'Indisponível' : 'Disponível'}</span>
-            </div>`;
-        })
-        .join("");
+      gridMonitores.innerHTML = monitoresAtivos.map(m => {
+        const indisp = m.status !== "Disponível";
+        return `
+          <div class="monitor-status-card ${indisp ? 'np' : 'disp'}">
+            <strong>${escapeHtml(m.nome)}${indisp ? ' (Indisponível)' : ''}</strong>
+            <span>${indisp ? 'Indisponível' : 'Disponível'}</span>
+          </div>`;
+      }).join("");
     }
   }
 
-  // 2. Sino de notificações
+  // 2. Sino
   window.renderizarSino();
   if (document.getElementById("modal-notif-operador")?.classList.contains("open")) {
     window.renderizarModalNotificacoes();
   }
 
-  // 3. Alerta presencial / botão chamada
+  // 3. Alerta presencial / botão
   const boxAlertaOp = document.getElementById("alerta-suporte-operador");
   const btnChamarMon = document.getElementById("btn-chamar-monitor");
   if (operadorSessao) {
@@ -932,12 +1061,12 @@ window.renderizarTudo = function () {
       boxAlertaOp.className = "emergency-item";
       if (alerta.status === "Aguardando") {
         boxAlertaOp.innerHTML =
-          `<div><i class="fa-solid fa-spinner fa-spin" style="color:var(--warning);"></i> <strong>Chamado presencial ativo:</strong> aguardando monitor na PA ${alerta.pa}.</div>
-           <button class="btn-back" style="margin:0;" onclick="cancelarAlertaPresencialOperadorMock('${alerta.id}')">Cancelar</button>`;
+          `<div><i class="fa-solid fa-spinner fa-spin" style="color:var(--warning);"></i> <strong>Chamado presencial ativo:</strong> aguardando monitor na PA ${escapeHtml(alerta.pa)}.</div>
+           <button class="btn-back" style="margin:0;" onclick="cancelarAlertaPresencialOperadorMock('${escapeHtml(alerta.id)}')">Cancelar</button>`;
       } else {
         boxAlertaOp.style.borderLeftColor = "var(--success)";
         boxAlertaOp.innerHTML =
-          `<div><i class="fa-solid fa-user-check" style="color:var(--success);"></i> <strong>Monitor a caminho:</strong> ${alerta.monitorAtendente} se deslocando até sua PA.</div>`;
+          `<div><i class="fa-solid fa-user-check" style="color:var(--success);"></i> <strong>Monitor a caminho:</strong> ${escapeHtml(alerta.monitorAtendente)} se deslocando até sua PA.</div>`;
       }
       if (btnChamarMon) btnChamarMon.style.display = "none";
     } else {
@@ -949,7 +1078,7 @@ window.renderizarTudo = function () {
   // 4. Chamados do operador
   const listaOp = document.getElementById("lista-casos-operador");
   if (listaOp && operadorSessao) {
-    const meus = localDB.casos.filter((c) => c.operador === operadorSessao.nome);
+    const meus = casos.filter((c) => c.operador === operadorSessao.nome);
     listaOp.innerHTML = "";
     if (meus.length === 0) {
       listaOp.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); padding:14px; text-align:center;">Você não realizou transmissões hoje.</div>`;
@@ -961,20 +1090,25 @@ window.renderizarTudo = function () {
         if (c.status === "Pendente") {
           badge = `<span class="badge warning">Aguardando (${min(c.timestamp)}m)</span>`;
           acoes = `<div class="card-actions-row">
-            <button class="btn-secondary" onclick="event.stopPropagation(); editarCasoOperadorMock('${c.id}')"><i class="fa-solid fa-pen"></i> Editar</button>
-            <button class="btn-danger" onclick="event.stopPropagation(); cancelarCasoOperadorMock('${c.id}')"><i class="fa-solid fa-trash"></i> Cancelar</button>
+            <button class="btn-secondary" onclick="event.stopPropagation(); editarCasoOperadorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-pen"></i> Editar</button>
+            <button class="btn-danger" onclick="event.stopPropagation(); cancelarCasoOperadorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-trash"></i> Cancelar</button>
           </div>`;
         } else if (c.status === "Em Verificação") {
-          badge = `<span class="badge info">Em suporte por ${c.monitorAtendente}</span>`;
+          badge = `<span class="badge info">Em suporte por ${escapeHtml(c.monitorAtendente)}</span>`;
+          // Operador pode editar mesmo em verificação (apenas título/desc/direcionamento).
+          acoes = `<div class="card-actions-row">
+            <button class="btn-secondary" onclick="event.stopPropagation(); editarCasoOperadorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-pen"></i> Editar</button>
+          </div>`;
         } else {
           badge = `<span class="badge success">Solucionado</span>`;
         }
         const labelDir = c.monitorDirecionado
-          ? `<div class="tag-monitor-direcionado"><i class="fa-solid fa-arrow-turn-up"></i> ${c.monitorDirecionado}</div>` : "";
+          ? `<div class="tag-monitor-direcionado"><i class="fa-solid fa-arrow-turn-up"></i> ${escapeHtml(c.monitorDirecionado)}</div>` : "";
+        // Preview em linha corrida (sem <br>), igual ao layout antigo (Imagem 1).
         card.innerHTML = `
-          <div class="card-top-info"><span>${c.id}</span> ${badge}</div>
-          <h4>${c.titulo}</h4>
-          <p class="desc-truncada">${c.descricao}</p>
+          <div class="card-top-info"><span>${escapeHtml(c.id)}</span> ${badge}</div>
+          <h4>${escapeHtml(c.titulo)}</h4>
+          <p class="desc-truncada">${inlineTexto(c.descricao)}</p>
           ${labelDir}${acoes}`;
         card.addEventListener("click", (e) => {
           if (e.target.closest(".card-actions-row")) return;
@@ -985,7 +1119,7 @@ window.renderizarTudo = function () {
     }
   }
 
-  // 5. Painel emergências (monitor)
+  // 5. Emergências (monitor)
   const painelEm = document.getElementById("painel-emergencias");
   const listaEm = document.getElementById("lista-emergencias");
   if (painelEm && listaEm) {
@@ -996,12 +1130,12 @@ window.renderizarTudo = function () {
       listaEm.innerHTML = localDB.alertas_pa.map(a =>
         a.status === "Aguardando"
           ? `<div class="emergency-item">
-               <div>🚨 <strong>PA ${a.pa}</strong> — ${a.operador} aguarda suporte (${min(a.timestamp)}m)</div>
-               <button onclick="atenderAlertaPresencialMock('${a.id}')" class="btn-success"><i class="fa-solid fa-person-walking-arrow-right"></i> Prestar suporte</button>
+               <div>🚨 <strong>PA ${escapeHtml(a.pa)}</strong> — ${escapeHtml(a.operador)} aguarda suporte (${min(a.timestamp)}m)</div>
+               <button onclick="atenderAlertaPresencialMock('${escapeHtml(a.id)}')" class="btn-success"><i class="fa-solid fa-person-walking-arrow-right"></i> Prestar suporte</button>
              </div>`
           : `<div class="emergency-item" style="border-left-color:var(--success);">
-               <div><i class="fa-solid fa-check-double" style="color:var(--success);"></i> ${a.monitorAtendente} em atendimento na PA ${a.pa}.</div>
-               <button onclick="concluirAlertaPresencialMock('${a.id}')" class="btn-secondary"><i class="fa-solid fa-circle-check"></i> Finalizar</button>
+               <div><i class="fa-solid fa-check-double" style="color:var(--success);"></i> ${escapeHtml(a.monitorAtendente)} em atendimento na PA ${escapeHtml(a.pa)}.</div>
+               <button onclick="concluirAlertaPresencialMock('${escapeHtml(a.id)}')" class="btn-secondary"><i class="fa-solid fa-circle-check"></i> Finalizar</button>
              </div>`
       ).join("");
     }
@@ -1021,15 +1155,15 @@ window.renderizarTudo = function () {
   if (listaFila && listaArq) {
     listaFila.innerHTML = ""; listaArq.innerHTML = "";
     let totalPend = 0, totalConcl = 0;
-    localDB.casos.forEach((c) => {
+    casos.forEach((c) => {
       if (c.status === "Pendente") totalPend++;
       if (c.status === "Concluído") totalConcl++;
       const matchBusca =
-        c.operador.toLowerCase().includes(termo) ||
-        c.titulo.toLowerCase().includes(termo) ||
-        c.descricao.toLowerCase().includes(termo) ||
-        c.pa.toString().includes(termo) ||
-        c.id.toLowerCase().includes(termo);
+        (c.operador || "").toLowerCase().includes(termo) ||
+        (c.titulo || "").toLowerCase().includes(termo) ||
+        (c.descricao || "").toLowerCase().includes(termo) ||
+        String(c.pa || "").includes(termo) ||
+        (c.id || "").toLowerCase().includes(termo);
       const matchDir = filDir !== "Meus" || !monitorSessao
         ? true
         : (c.monitorDirecionado === monitorSessao.nome || c.monitorAtendente === monitorSessao.nome);
@@ -1041,21 +1175,24 @@ window.renderizarTudo = function () {
       let badge = "", acao = "";
       if (c.status === "Pendente") {
         badge = `<span class="badge warning">Pendente (${min(c.timestamp)}m)</span>`;
-        acao = `<button class="btn-success" onclick="event.stopPropagation(); atenderCasoMonitorMock('${c.id}')"><i class="fa-solid fa-handshake-angle"></i> Assumir tratativa</button>`;
+        acao = `<button class="btn-success" onclick="event.stopPropagation(); atenderCasoMonitorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-handshake-angle"></i> Assumir tratativa</button>`;
       } else if (c.status === "Em Verificação") {
         const souEu = monitorSessao && c.monitorAtendente === monitorSessao.nome;
-        badge = `<span class="badge info">${souEu ? "Sob sua análise" : "Com " + c.monitorAtendente}</span>`;
-        acao = `<button class="btn-secondary" onclick="event.stopPropagation(); abrirModalCaso('${c.id}')"><i class="fa-solid fa-folder-open"></i> ${souEu ? "Responder & finalizar" : "Visualizar"}</button>`;
+        badge = `<span class="badge info">${souEu ? "Sob sua análise" : "Com " + escapeHtml(c.monitorAtendente)}</span>`;
+        // Qualquer monitor pode abrir e finalizar — botão sempre como "Responder & finalizar".
+        acao = monitorSessao
+          ? `<button class="btn-secondary" onclick="event.stopPropagation(); abrirModalCaso('${escapeHtml(c.id)}')"><i class="fa-solid fa-folder-open"></i> Responder &amp; finalizar</button>`
+          : `<button class="btn-secondary" onclick="event.stopPropagation(); abrirModalCaso('${escapeHtml(c.id)}')"><i class="fa-solid fa-folder-open"></i> Visualizar</button>`;
       } else {
         badge = `<span class="badge success">Solucionado</span>`;
-        acao = `<button class="btn-secondary" onclick="event.stopPropagation(); abrirModalCaso('${c.id}')"><i class="fa-solid fa-eye"></i> Rever</button>`;
+        acao = `<button class="btn-secondary" onclick="event.stopPropagation(); abrirModalCaso('${escapeHtml(c.id)}')"><i class="fa-solid fa-eye"></i> Rever</button>`;
       }
       const labelDir = c.monitorDirecionado
-        ? `<div class="tag-monitor-direcionado ${monitorSessao && c.monitorDirecionado === monitorSessao.nome ? "destacado" : ""}"><i class="fa-solid fa-user-tag"></i> ${c.monitorDirecionado}</div>` : "";
+        ? `<div class="tag-monitor-direcionado ${monitorSessao && c.monitorDirecionado === monitorSessao.nome ? "destacado" : ""}"><i class="fa-solid fa-user-tag"></i> ${escapeHtml(c.monitorDirecionado)}</div>` : "";
       card.innerHTML = `
-        <div class="card-top-info"><strong>PA ${c.pa} • ${c.operador}</strong> ${badge}</div>
-        <h4>${c.titulo}</h4>
-        <p class="desc-truncada">${c.descricao}</p>
+        <div class="card-top-info"><strong>PA ${escapeHtml(c.pa)} • ${escapeHtml(c.operador)}</strong> ${badge}</div>
+        <h4>${escapeHtml(c.titulo)}</h4>
+        <p class="desc-truncada">${inlineTexto(c.descricao)}</p>
         ${labelDir}${acao}`;
       card.addEventListener("click", (e) => {
         if (e.target.closest("button")) return;
@@ -1076,7 +1213,7 @@ window.renderizarTudo = function () {
     }
   }
 
-  // 7. Renderização do admin (se tela ativa)
+  // 7. Admin
   if (adminSessao && document.getElementById("tela-admin")?.classList.contains("active")) {
     renderizarAdminMonitores();
     renderizarAdminNotificacoes();
@@ -1108,13 +1245,13 @@ function renderizarAdminMonitores() {
     return `
       <div class="admin-monitor-card">
         <div class="am-top">
-          <div><div class="am-name">${m.nome}</div>
-            <div class="am-meta">Sessão: ${m.sessionId || m.id} · Último sinal: ${m.lastSeen ? new Date(m.lastSeen).toLocaleTimeString("pt-BR") : "—"}</div>
+          <div><div class="am-name">${escapeHtml(m.nome)}</div>
+            <div class="am-meta">Sessão: ${escapeHtml(m.sessionId || m.id)} · Último sinal: ${m.lastSeen ? new Date(m.lastSeen).toLocaleTimeString("pt-BR") : "—"}</div>
           </div>
           ${badgeStatus}
         </div>
         <div class="am-actions">
-          <button class="btn-danger" onclick="forcarLogoutMonitorAdmin('${m.id}', '${m.nome.replace(/'/g, "\\'")}')">
+          <button class="btn-danger" data-monitor-id="${escapeHtml(m.id)}" data-monitor-nome="${escapeHtml(m.nome)}" onclick="forcarLogoutMonitorAdmin(this.dataset.monitorId, this.dataset.monitorNome)">
             <i class="fa-solid fa-power-off"></i> Forçar desconexão desta sessão
           </button>
         </div>
@@ -1130,14 +1267,17 @@ function renderizarAdminNotificacoes() {
     cont.innerHTML = `<div style="color:var(--text-muted); padding:10px; text-align:center; font-style:italic;">Nenhum comunicado ativo.</div>`;
     return;
   }
-  cont.innerHTML = ordenadas.map(n => `
-    <div class="notif-history-item ${n.tipo || "info"}">
+  cont.innerHTML = ordenadas.map(n => {
+    const tipo = (n.tipo || "info").replace(/[^a-z]/gi, "");
+    return `
+    <div class="notif-history-item ${tipo}">
       <div>
-        <strong>${(n.tipo || "info").toUpperCase()}${n.titulo ? ' · ' + n.titulo : ''}:</strong> ${n.mensagem}
+        <strong>${tipo.toUpperCase()}${n.titulo ? ' · ' + escapeHtml(n.titulo) : ''}:</strong> ${nl2br(n.mensagem)}
         <div class="nh-time">${new Date(n.timestamp).toLocaleString("pt-BR")}</div>
       </div>
-      <button onclick="removerNotificacaoAdmin('${n.id}')"><i class="fa-solid fa-trash"></i> Remover</button>
-    </div>`).join("");
+      <button onclick="removerNotificacaoAdmin('${escapeHtml(n.id)}')"><i class="fa-solid fa-trash"></i> Remover</button>
+    </div>`;
+  }).join("");
 }
 
 window.renderizarRelatorios = function () {
@@ -1192,7 +1332,7 @@ window.renderizarRelatorios = function () {
           <tbody>
             ${linhas.map(([nome, s]) => `
               <tr>
-                <td class="col-monitor"><strong>${nome}</strong></td>
+                <td class="col-monitor"><strong>${escapeHtml(nome)}</strong></td>
                 <td class="col-num">${s.total}</td>
                 <td class="col-num" style="color:var(--success);">${s.concluidos}</td>
                 <td class="col-num" style="color:var(--info);">${s.emTratativa}</td>
@@ -1205,13 +1345,11 @@ window.renderizarRelatorios = function () {
 };
 
 // --------------------------------------------------------------------------
-// SUPORTE A "ENTER" NOS LOGINS
+// ENTER NOS LOGINS
 // --------------------------------------------------------------------------
 function ligarEnter(el, fn) {
   if (!el) return;
-  el.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); fn(); }
-  });
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); fn(); } });
 }
 
 // --------------------------------------------------------------------------
@@ -1222,22 +1360,22 @@ window.addEventListener("DOMContentLoaded", () => {
     window.inicializarSincronismoFirebase();
   }
 
-  // Enter em todas as telas de login
   ligarEnter(document.getElementById("op-nome"),            () => window.iniciarSessaoOperadorMock());
   ligarEnter(document.getElementById("op-pa"),              () => window.iniciarSessaoOperadorMock());
   ligarEnter(document.getElementById("monitor-nome-login"), () => window.loginMonitorMock());
   ligarEnter(document.getElementById("monitor-senha-login"),() => window.loginMonitorMock());
   ligarEnter(document.getElementById("admin-senha-login"),  () => window.loginAdminMock());
 
-  // Preview da limpeza atualiza com o select
   document.getElementById("limpeza-periodo")?.addEventListener("change", atualizarPreviewLimpeza);
 
-  // Fecha modal de notificações ao clicar fora
   document.getElementById("modal-notif-operador")?.addEventListener("click", (e) => {
     if (e.target.id === "modal-notif-operador") window.fecharModalNotificacoes();
   });
   document.getElementById("modal-detalhe-caso")?.addEventListener("click", (e) => {
     if (e.target.id === "modal-detalhe-caso") window.fecharModalCaso();
+  });
+  document.getElementById("modal-editar-caso")?.addEventListener("click", (e) => {
+    if (e.target.id === "modal-editar-caso") window.fecharModalEdicaoCaso();
   });
 
   if (operadorSessao) {
@@ -1250,33 +1388,23 @@ window.addEventListener("DOMContentLoaded", () => {
 
   if (monitorSessao) {
     document.getElementById("txt-nome-monitor-logado").innerHTML =
-      `<i class="fa-solid fa-user-shield"></i> Monitor conectado: <strong>${monitorSessao.nome}</strong>`;
+      `<i class="fa-solid fa-user-shield"></i> Monitor conectado: <strong>${escapeHtml(monitorSessao.nome)}</strong>`;
     const optDisp = document.getElementById("status-opt-disp");
     const optNp = document.getElementById("status-opt-np");
     if (optDisp) optDisp.className = monitorSessao.status === "Disponível" ? "status-opt active-disp" : "status-opt";
     if (optNp)   optNp.className   = monitorSessao.status === "Não Perturbe" ? "status-opt active-np" : "status-opt";
 
-    // Re-registra esta sessão (sessionId preservado em sessionStorage)
     aposFirebaseCarregar(() => {
-      if (!localDB.monitores_online.find(m => m.id === monitorSessao.id)) {
-        const registro = {
-          id: monitorSessao.id,
-          sessionId: monitorSessao.sessionId,
-          nome: monitorSessao.nome,
-          status: monitorSessao.status,
-          lastSeen: Date.now(),
-        };
-        localDB.monitores_online.push(registro);
-        window.salvarItem("monitores_online", registro);
-      }
+      window.salvarItem("monitores_online", {
+        id: monitorSessao.id, sessionId: monitorSessao.sessionId,
+        nome: monitorSessao.nome, status: monitorSessao.status, lastSeen: Date.now(),
+      });
     });
     iniciarHeartbeat();
     window.irPara("tela-monitor");
   }
 
-  if (adminSessao) {
-    window.irPara("tela-admin");
-  }
+  if (adminSessao) window.irPara("tela-admin");
 
   window.renderizarTudo();
 });
