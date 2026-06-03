@@ -11,9 +11,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
-
-  <!-- Config local (senhas + firebaseConfig). NÃO sobe ao GitHub (.gitignore) -->
-  <script src="config.local.js"></script>
 </head>
 <body data-theme="dark">
 
@@ -529,7 +526,6 @@
 
   <!-- =====================================================================
        FIREBASE REALTIME
-       firebaseConfig agora vem de window.APP_CONFIG (config.local.js).
        ===================================================================== -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
@@ -538,12 +534,18 @@
       onChildRemoved, onDisconnect, update, query, orderByChild, limitToLast
     } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-    if (!window.APP_CONFIG || !window.APP_CONFIG.firebaseConfig) {
-      alert("config.local.js não foi carregado. Copie config.local.js para a mesma pasta do index.html.");
-      throw new Error("APP_CONFIG ausente");
-    }
+    const firebaseConfig = {
+      apiKey:            "AIzaSyB6WQibm5djPFYHUjuW8G8XZENzofVA5eA",
+      authDomain:        "suppaciente-testes.firebaseapp.com",
+      databaseURL:       "https://suppaciente-testes-default-rtdb.firebaseio.com",
+      projectId:         "suppaciente-testes",
+      storageBucket:     "suppaciente-testes.firebasestorage.app",
+      messagingSenderId: "86414407394",
+      appId:             "1:86414407394:web:4f98ba9dc3f2547f0f90bb",
+      measurementId:     "G-7T2WVE075N",
+    };
 
-    const app = initializeApp(window.APP_CONFIG.firebaseConfig);
+    const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
 
     window.fbDB             = db;
@@ -565,6 +567,6 @@
     }
   </script>
 
-  <script type="module" src="script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
