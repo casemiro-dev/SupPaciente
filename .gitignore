@@ -1,0 +1,33 @@
+# ============================================================
+# SupPaciente / Teleflow — .gitignore
+# Protege credenciais e dados sensíveis para que NÃO subam ao GitHub.
+# ============================================================
+
+# >>> CONFIGURAÇÕES SENSÍVEIS (senhas, firebaseConfig) <<<
+config.local.js
+config.*.local.js
+.env
+.env.*
+*.secret.js
+secrets/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node (caso evolua para build)
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Backups
+*.bak
+*.orig
+*~
