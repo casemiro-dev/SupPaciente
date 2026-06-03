@@ -11,6 +11,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
+
+  <!-- Config local (senhas + firebaseConfig). NÃO sobe ao GitHub (.gitignore) -->
+  <script src="config.local.js"></script>
 </head>
 <body data-theme="dark">
 
@@ -55,6 +58,52 @@
         </div>
 
         <div id="modal-area-resposta-concluida" class="feedback-box" style="display:none; margin-top:14px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de EDIÇÃO do chamado (operador) -->
+  <div id="modal-editar-caso" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-pen-to-square" style="color:var(--primary);"></i> Editar chamado</h3>
+        <div class="modal-header-actions">
+          <button class="btn-close-modal" onclick="fecharModalEdicaoCaso()" aria-label="Fechar">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div id="editar-caso-aviso" class="feedback-box" style="display:none; margin-bottom:14px;"></div>
+        <input type="hidden" id="editar-caso-id">
+
+        <div class="input-group">
+          <label>Título do caso</label>
+          <input type="text" id="editar-caso-titulo" placeholder="Assunto do caso">
+        </div>
+
+        <div class="input-group">
+          <label><i class="fa-solid fa-user-tag"></i> Direcionar para monitor (opcional)</label>
+          <select id="editar-caso-monitor">
+            <option value="">Disponibilizar para todos (geral)</option>
+            <option value="Keyser">Keyser</option>
+            <option value="Ruan">Ruan</option>
+            <option value="Pedro">Pedro</option>
+            <option value="Solon">Solon</option>
+            <option value="Marcos">Marcos</option>
+            <option value="Eduarda">Eduarda</option>
+            <option value="Leonardo">Leonardo</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label>Descrição detalhada</label>
+          <textarea id="editar-caso-descricao" placeholder="Texto técnico do caso..."></textarea>
+        </div>
+
+        <button class="btn-success" onclick="salvarEdicaoCaso()">
+          <i class="fa-solid fa-floppy-disk"></i> Salvar alterações
+        </button>
       </div>
     </div>
   </div>
@@ -371,10 +420,8 @@
         </div>
       </div>
 
-      <input type="hidden" id="caso-id-edicao" value="">
-
       <div class="input-group">
-        <label id="label-status-formulario">Assunto / título do caso</label>
+        <label>Assunto / título do caso</label>
         <input type="text" id="caso-titulo" placeholder="Ex: Falha sistêmica na integração de dados">
       </div>
 
@@ -482,31 +529,36 @@
 
   <!-- =====================================================================
        FIREBASE REALTIME
+       firebaseConfig agora vem de window.APP_CONFIG (config.local.js).
        ===================================================================== -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getDatabase, ref, set, remove, onValue, onDisconnect, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+    import {
+      getDatabase, ref, set, remove, onValue, onChildAdded, onChildChanged,
+      onChildRemoved, onDisconnect, update, query, orderByChild, limitToLast
+    } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyCL-BcrJiSykTf3wuhE8h1vYoL88eHYqmE",
-      authDomain: "suppaciente.firebaseapp.com",
-      databaseURL: "https://suppaciente-default-rtdb.firebaseio.com",
-      projectId: "suppaciente",
-      storageBucket: "suppaciente.firebasestorage.app",
-      messagingSenderId: "191120541769",
-      appId: "1:191120541769:web:9f2c8715ba1844e6ebd798"
-    };
+    if (!window.APP_CONFIG || !window.APP_CONFIG.firebaseConfig) {
+      alert("config.local.js não foi carregado. Copie config.local.js para a mesma pasta do index.html.");
+      throw new Error("APP_CONFIG ausente");
+    }
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    const app = initializeApp(window.APP_CONFIG.firebaseConfig);
+    const db  = getDatabase(app);
 
-    window.fbDB = db;
-    window.fbRef = ref;
-    window.fbSet = set;
-    window.fbRemove = remove;
-    window.fbOnValue = onValue;
-    window.fbOnDisconnect = onDisconnect;
-    window.fbUpdate = update;
+    window.fbDB             = db;
+    window.fbRef            = ref;
+    window.fbSet            = set;
+    window.fbRemove         = remove;
+    window.fbOnValue        = onValue;
+    window.fbOnChildAdded   = onChildAdded;
+    window.fbOnChildChanged = onChildChanged;
+    window.fbOnChildRemoved = onChildRemoved;
+    window.fbOnDisconnect   = onDisconnect;
+    window.fbUpdate         = update;
+    window.fbQuery          = query;
+    window.fbOrderByChild   = orderByChild;
+    window.fbLimitToLast    = limitToLast;
 
     if (typeof window.inicializarSincronismoFirebase === "function") {
       window.inicializarSincronismoFirebase();
