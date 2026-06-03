@@ -1,9 +1,0 @@
-{
-  "name": "suppaciente-teleflow",
-  "version": "7.0.0",
-  "description": "Sistema de Chamados",
-  "main": "script.js",
-  "scripts": {
-    "build": "node gerar-config.js"
-  }
-}
