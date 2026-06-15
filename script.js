@@ -1115,7 +1115,7 @@ window.renderizarTudo = function () {
           ? `<div class="tag-monitor-direcionado"><i class="fa-solid fa-arrow-turn-up"></i> ${escapeHtml(c.monitorDirecionado)}${c.direcionadoEm ? ' · ' + new Date(c.direcionadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}</div>` : "";
         // Preview em linha corrida (sem <br>), igual ao layout antigo (Imagem 1).
         card.innerHTML = `
-          <div class="card-top-info"><span>${escapeHtml(c.id)}</span> <span style="font-weight:400;">${new Date(c.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span> ${badge}</div>
+          <div class="card-top-info"><span>${escapeHtml(c.id)}</span> ${badge}</div>
           <h4>${escapeHtml(c.titulo)}</h4>
           <p class="desc-truncada">${inlineTexto(c.descricao)}</p>
           ${labelDir}${acoes}`;
@@ -1199,7 +1199,7 @@ window.renderizarTudo = function () {
       const labelDir = c.monitorDirecionado
         ? `<div class="tag-monitor-direcionado ${monitorSessao && c.monitorDirecionado === monitorSessao.nome ? "destacado" : ""}"><i class="fa-solid fa-user-tag"></i> ${escapeHtml(c.monitorDirecionado)}${c.direcionadoEm ? ' · ' + new Date(c.direcionadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}</div>` : "";
       card.innerHTML = `
-        <div class="card-top-info"><strong>PA ${escapeHtml(c.pa)} • ${escapeHtml(c.operador)}</strong> <span style="font-weight:400;">${new Date(c.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span> ${badge}</div>
+        <div class="card-top-info"><strong>PA ${escapeHtml(c.pa)} • ${escapeHtml(c.operador)}</strong> ${badge}</div>
         <h4>${escapeHtml(c.titulo)}</h4>
         <p class="desc-truncada">${inlineTexto(c.descricao)}</p>
         ${labelDir}${acao}`;
