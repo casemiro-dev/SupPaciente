@@ -422,7 +422,9 @@ window.enviarCasoMock = function () {
     id: "C-" + Date.now() + "-" + Math.floor(1000 + Math.random() * 9000),
     operador: operadorSessao.nome,
     pa: operadorSessao.pa,
-    titulo, descricao, monitorDirecionado,
+    titulo, descricao,
+    monitorDirecionado,
+    direcionadoEm: monitorDirecionado ? Date.now() : null,
     status: "Pendente",
     timestamp: Date.now(),
     monitorAtendente: "",
@@ -491,8 +493,14 @@ window.salvarEdicaoCaso = function () {
 
   // Escrita por campo: status e monitorAtendente NUNCA são tocados,
   // por isso o caso continua na fila do monitor que assumiu.
-  Object.assign(caso, { titulo, descricao, monitorDirecionado });
-  window.atualizarCampos("casos", id, { titulo, descricao, monitorDirecionado });
+  const updates = { titulo, descricao, monitorDirecionado };
+  if (monitorDirecionado && monitorDirecionado !== caso.monitorDirecionado) {
+    updates.direcionadoEm = Date.now();
+  } else if (!monitorDirecionado) {
+    updates.direcionadoEm = null;
+  }
+  Object.assign(caso, updates);
+  window.atualizarCampos("casos", id, updates);
   window.lancarToast("Chamado atualizado com sucesso.", "success");
   window.fecharModalEdicaoCaso();
 };
@@ -848,6 +856,7 @@ window.exportarRelatorioJSON = function () {
       id: c.id, operador: c.operador, pa: c.pa,
       titulo: c.titulo, descricao: c.descricao,
       monitorDirecionado: c.monitorDirecionado || null,
+      direcionadoEm: c.direcionadoEm || null,
       monitorAtendente: c.monitorAtendente || null,
       status: c.status, respostaFeedback: c.respostaFeedback || null,
       criadoEm: c.timestamp ? new Date(c.timestamp).toISOString() : null,
@@ -929,7 +938,10 @@ window.abrirModalCaso = function (id) {
   document.getElementById("modal-titulo-caso").innerText = caso.titulo;
   document.getElementById("modal-descricao-caso").innerText = caso.descricao;
   document.getElementById("modal-op-pa").innerHTML =
-    `<i class="fa-solid fa-headset"></i> Operador: <strong>${escapeHtml(caso.operador)}</strong> (PA ${escapeHtml(caso.pa)})`;
+    `<i class="fa-solid fa-headset"></i> Operador: <strong>${escapeHtml(caso.operador)}</strong> (PA ${escapeHtml(caso.pa)}) · <strong>Criado:</strong> ${new Date(caso.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`;
+  document.getElementById("modal-direcionamento").innerHTML = caso.monitorDirecionado
+    ? `<i class="fa-solid fa-arrow-turn-up"></i> <strong>Direcionado:</strong> ${escapeHtml(caso.monitorDirecionado)}${caso.direcionadoEm ? ' · ' + new Date(caso.direcionadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}`
+    : "";
 
   const areaTratativa = document.getElementById("modal-area-tratativa");
   const areaResposta = document.getElementById("modal-area-resposta-concluida");
@@ -1008,10 +1020,11 @@ window.atualizarApenasTempoEStatusModal = function () {
   const el = document.getElementById("modal-timer-status");
   if (!caso || !el) return;
   const minPassados = Math.floor((Date.now() - caso.timestamp) / 60000);
+  const horaCriacao = new Date(caso.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   let badge = "";
-  if (caso.status === "Pendente")       badge = `<span class="badge warning">Aguardando (${minPassados}m)</span>`;
-  if (caso.status === "Em Verificação") badge = `<span class="badge info">Em tratativa por ${escapeHtml(caso.monitorAtendente)} (${minPassados}m)</span>`;
-  if (caso.status === "Concluído")      badge = `<span class="badge success">Solucionado</span>`;
+  if (caso.status === "Pendente")       badge = `<span class="badge warning">Aguardando (${minPassados}m · ${horaCriacao})</span>`;
+  if (caso.status === "Em Verificação") badge = `<span class="badge info">Em tratativa por ${escapeHtml(caso.monitorAtendente)} (${minPassados}m · ${horaCriacao})</span>`;
+  if (caso.status === "Concluído")      badge = `<span class="badge success">Solucionado (${horaCriacao})</span>`;
   el.innerHTML = badge;
 };
 
@@ -1084,7 +1097,7 @@ window.renderizarTudo = function () {
         card.className = `case-card ${c.status === "Concluído" ? "card-concluido" : ""}`;
         let badge = "", acoes = "";
         if (c.status === "Pendente") {
-          badge = `<span class="badge warning">Aguardando (${min(c.timestamp)}m)</span>`;
+          badge = `<span class="badge warning">Aguardando (${min(c.timestamp)}m · ${new Date(c.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})})</span>`;
           acoes = `<div class="card-actions-row">
             <button class="btn-secondary" onclick="event.stopPropagation(); editarCasoOperadorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-pen"></i> Editar</button>
             <button class="btn-danger" onclick="event.stopPropagation(); cancelarCasoOperadorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-trash"></i> Cancelar</button>
@@ -1099,10 +1112,10 @@ window.renderizarTudo = function () {
           badge = `<span class="badge success">Solucionado</span>`;
         }
         const labelDir = c.monitorDirecionado
-          ? `<div class="tag-monitor-direcionado"><i class="fa-solid fa-arrow-turn-up"></i> ${escapeHtml(c.monitorDirecionado)}</div>` : "";
+          ? `<div class="tag-monitor-direcionado"><i class="fa-solid fa-arrow-turn-up"></i> ${escapeHtml(c.monitorDirecionado)}${c.direcionadoEm ? ' · ' + new Date(c.direcionadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}</div>` : "";
         // Preview em linha corrida (sem <br>), igual ao layout antigo (Imagem 1).
         card.innerHTML = `
-          <div class="card-top-info"><span>${escapeHtml(c.id)}</span> ${badge}</div>
+          <div class="card-top-info"><span>${escapeHtml(c.id)}</span> <span style="font-weight:400;">${new Date(c.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span> ${badge}</div>
           <h4>${escapeHtml(c.titulo)}</h4>
           <p class="desc-truncada">${inlineTexto(c.descricao)}</p>
           ${labelDir}${acoes}`;
@@ -1170,7 +1183,7 @@ window.renderizarTudo = function () {
       card.className = `case-card ${c.status === "Concluído" ? "card-concluido" : ""}`;
       let badge = "", acao = "";
       if (c.status === "Pendente") {
-        badge = `<span class="badge warning">Pendente (${min(c.timestamp)}m)</span>`;
+        badge = `<span class="badge warning">Pendente (${min(c.timestamp)}m · ${new Date(c.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})})</span>`;
         acao = `<button class="btn-success" onclick="event.stopPropagation(); atenderCasoMonitorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-handshake-angle"></i> Assumir tratativa</button>`;
       } else if (c.status === "Em Verificação") {
         const souEu = monitorSessao && c.monitorAtendente === monitorSessao.nome;
@@ -1184,9 +1197,9 @@ window.renderizarTudo = function () {
         acao = `<button class="btn-secondary" onclick="event.stopPropagation(); abrirModalCaso('${escapeHtml(c.id)}')"><i class="fa-solid fa-eye"></i> Rever</button>`;
       }
       const labelDir = c.monitorDirecionado
-        ? `<div class="tag-monitor-direcionado ${monitorSessao && c.monitorDirecionado === monitorSessao.nome ? "destacado" : ""}"><i class="fa-solid fa-user-tag"></i> ${escapeHtml(c.monitorDirecionado)}</div>` : "";
+        ? `<div class="tag-monitor-direcionado ${monitorSessao && c.monitorDirecionado === monitorSessao.nome ? "destacado" : ""}"><i class="fa-solid fa-user-tag"></i> ${escapeHtml(c.monitorDirecionado)}${c.direcionadoEm ? ' · ' + new Date(c.direcionadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}</div>` : "";
       card.innerHTML = `
-        <div class="card-top-info"><strong>PA ${escapeHtml(c.pa)} • ${escapeHtml(c.operador)}</strong> ${badge}</div>
+        <div class="card-top-info"><strong>PA ${escapeHtml(c.pa)} • ${escapeHtml(c.operador)}</strong> <span style="font-weight:400;">${new Date(c.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span> ${badge}</div>
         <h4>${escapeHtml(c.titulo)}</h4>
         <p class="desc-truncada">${inlineTexto(c.descricao)}</p>
         ${labelDir}${acao}`;
