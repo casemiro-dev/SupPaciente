@@ -1179,7 +1179,7 @@ window.renderizarTudo = function () {
         ? true
         : (c.monitorDirecionado === monitorSessao.nome || c.monitorAtendente === monitorSessao.nome);
 
-      if (matchBusca && matchDir && c.status === "Em Verificação") {
+      if (matchBusca && matchDir && c.status !== "Concluído") {
         totalTratativa++;
       }
 
