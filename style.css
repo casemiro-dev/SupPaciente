@@ -900,3 +900,23 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
   font-size: 0.72rem; color: var(--text-muted);
   font-style: italic; text-align: right;
 }
+
+.dashboard-stats-compact {
+  display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0;
+}
+.stat-box-compact {
+  flex: 1; min-width: 180px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+}
+.stat-label-compact {
+  font-size: 0.82rem; font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.stat-value-compact { 
+  font-size: 1.6rem; font-weight: 700; color: var(--primary); line-height: 1; 
+}

@@ -1187,6 +1187,7 @@ window.renderizarTudo = function () {
   const countArq = document.getElementById("count-arquivados");
   const statPend = document.getElementById("stat-pendentes");
   const statConcl = document.getElementById("stat-concluidos");
+  const statTratativa = document.getElementById("stat-tratativa");
 
   const termo = document.getElementById("search-input")?.value.toLowerCase() || "";
   const filDir = document.getElementById("filter-direcionamento")?.value || "Todos";
@@ -1196,6 +1197,7 @@ window.renderizarTudo = function () {
   if (listaFila && listaArq) {
     listaFila.innerHTML = ""; listaArq.innerHTML = "";
     let totalPend = 0, totalConcl = 0;
+    let totalTratativa = 0;
     casos.forEach((c) => {
       if (c.status === "Pendente") totalPend++;
       if (c.status === "Concluído") totalConcl++;
@@ -1208,6 +1210,9 @@ window.renderizarTudo = function () {
       const matchDir = filDir !== "Meus" || !monitorSessao
         ? true
         : (c.monitorDirecionado === monitorSessao.nome || c.monitorAtendente === monitorSessao.nome);
+        if (matchBusca && matchDir && c.status !== "Concluído") {
+    totalTratativa++;
+  }
       const matchSt = filSt === "Todos" ? true : c.status === filSt;
       const matchPri = filPri === "Todas" ? true : getPrioridadeInfo(c.timestamp, c.status).label === filPri;
       if (!matchBusca || !matchDir || !matchSt || !matchPri) return;
@@ -1253,6 +1258,7 @@ window.renderizarTudo = function () {
     if (statPend) statPend.innerText = totalPend;
     if (statConcl) statConcl.innerText = totalConcl;
     if (countArq) countArq.innerText = listaArq.children.length;
+    if (statTratativa) statTratativa.innerText = totalTratativa;
     if (!listaFila.children.length) {
       listaFila.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); padding:24px; text-align:center; font-style:italic;">Nenhum chamado ativo na fila atende aos filtros definidos.</div>`;
     }
