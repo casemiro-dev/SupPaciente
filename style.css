@@ -391,9 +391,28 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
   box-shadow: var(--shadow-xs);
 }
 .case-card:hover { transform: translateY(-2px); border-color: var(--primary); box-shadow: var(--shadow-md); }
-.case-card h4 { margin: 0; font-size: 0.98rem; color: var(--text); }
+.case-card h4 { margin: 0; font-size: 0.98rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .case-card.card-concluido { opacity: 0.85; }
 .case-card.card-concluido h4 { color: var(--text-soft); }
+.case-card.priority-warning { border-left: 4px solid var(--warning); background: var(--warning-soft); }
+.case-card.priority-danger { border-left: 4px solid var(--danger); background: var(--danger-soft); }
+.case-card.priority-critical { border-left: 4px solid var(--danger); background: var(--danger-soft); box-shadow: var(--shadow-md), 0 0 0 1.5px var(--danger); }
+
+.priority-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; white-space: nowrap;
+}
+.priority-pill.priority-warning { background: var(--warning); color: #fff; }
+.priority-pill.priority-danger { background: var(--danger); color: #fff; }
+.priority-pill.priority-critical { background: var(--danger); color: #fff; box-shadow: 0 0 0 1.5px var(--danger-hover); }
+
+.card-meta {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  font-size: 0.73rem; color: var(--text-muted); margin-bottom: 4px;
+}
+.card-meta span { display: inline-flex; align-items: center; gap: 4px; }
 
 .card-top-info {
   display: flex; align-items: center; justify-content: space-between;
@@ -880,77 +899,4 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
   margin-top: 8px;
   font-size: 0.72rem; color: var(--text-muted);
   font-style: italic; text-align: right;
-}
-
-/* ---------- 29. WIDGET FUTEBOL (SELEÇÃO) ---------- */
-.widget-futebol {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: var(--surface);
-  border: 2px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 16px;
-  box-shadow: var(--shadow-lg);
-  z-index: 950;
-  width: 240px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  transition: background var(--transition), border-color var(--transition), transform 0.3s ease;
-  animation: slideInFut 0.5s ease-out;
-}
-
-@keyframes slideInFut {
-  from { transform: translateY(100px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-.widget-header-fut {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-#fut-status { color: var(--success); }
-#fut-tempo { color: var(--text-muted); }
-
-.widget-body-fut {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.time-fut {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 1.3rem;
-  font-weight: 800;
-  color: var(--text);
-}
-.time-fut img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-.divisor-placar {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-/* Estado temporário quando o Brasil sofre gol */
-.widget-futebol.sofreu-gol {
-  background: var(--danger-soft) !important;
-  border-color: var(--danger) !important;
-  animation: shakeFut 0.5s ease-in-out infinite;
-}
-
-@keyframes shakeFut {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
 }
