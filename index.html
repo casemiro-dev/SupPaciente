@@ -1,19 +1,18 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SupPaciente</title>
-  <meta name="description" content="Gerenciamento de chamados em tempo real, triagem integrada e suporte às PAs.">
   <link rel="icon" type="image/png" href="favicon.png">
+  <meta name="description" content="Gerenciamento de chamados em tempo real, triagem integrada e suporte às PAs.">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
-
 <body data-theme="dark">
 
   <!-- Toggle de tema -->
@@ -31,8 +30,7 @@
       <div class="modal-header">
         <h3 id="modal-titulo-caso">Título do Chamado</h3>
         <div class="modal-header-actions">
-          <button class="btn-icon-copy" onclick="copiarConteudoCasoModal()" aria-label="Copiar conteúdo"
-            title="Copiar título e descrição">
+          <button class="btn-icon-copy" onclick="copiarConteudoCasoModal()" aria-label="Copiar conteúdo" title="Copiar título e descrição">
             <i class="fa-regular fa-copy"></i>
           </button>
           <button class="btn-close-modal" onclick="fecharModalCaso()" aria-label="Fechar">
@@ -278,8 +276,7 @@
       <div class="section-monitor-fluid">
         <h3><i class="fa-solid fa-trash-can" style="color:var(--danger);"></i> Apagar casos concluídos</h3>
         <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
-          Esta ação remove permanentemente do banco apenas os casos com status <strong>Concluído</strong> dentro do
-          período selecionado. Casos pendentes ou em tratativa <strong>nunca</strong> são apagados.
+          Esta ação remove permanentemente do banco apenas os casos com status <strong>Concluído</strong> dentro do período selecionado. Casos pendentes ou em tratativa <strong>nunca</strong> são apagados.
         </p>
 
         <div class="report-controls">
@@ -332,8 +329,7 @@
         </div>
         <div class="input-group">
           <label>Mensagem (até 600 caracteres)</label>
-          <textarea id="admin-notif-msg" maxlength="600"
-            placeholder="Ex: Sistema do CRM ficará indisponível das 14h às 14h30 para manutenção."></textarea>
+          <textarea id="admin-notif-msg" maxlength="600" placeholder="Ex: Sistema do CRM ficará indisponível das 14h às 14h30 para manutenção."></textarea>
         </div>
         <button onclick="enviarNotificacaoAdminMock()" class="btn-success">
           <i class="fa-solid fa-bullhorn"></i> Transmitir para todos os operadores
@@ -376,8 +372,7 @@
           <i class="fa-solid fa-headset" style="color:var(--primary);"></i> Terminal do operador
         </h2>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn-bell" id="btn-bell-notif" onclick="abrirModalNotificacoes()" aria-label="Comunicados"
-            title="Comunicados">
+          <button class="btn-bell" id="btn-bell-notif" onclick="abrirModalNotificacoes()" aria-label="Comunicados" title="Comunicados">
             <i class="fa-solid fa-bell"></i>
             <span id="bell-badge" class="bell-badge" style="display:none;">0</span>
           </button>
@@ -403,16 +398,14 @@
       <div id="alerta-suporte-operador" style="display:none; margin-bottom:14px;"></div>
 
       <div class="monitors-status-wrapper">
-        <label
-          style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
+        <label style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
           <i class="fa-solid fa-users-viewfinder"></i> Equipe de monitoria online
         </label>
         <div class="monitors-grid" id="grid-monitores-online"></div>
       </div>
 
       <div class="shortcuts-wrapper">
-        <label
-          style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
+        <label style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
           <i class="fa-solid fa-bolt"></i> Roteiros rápidos
         </label>
         <div class="shortcuts-container">
@@ -477,19 +470,13 @@
       <div style="display:flex; align-items:center; gap:10px;">
         <span style="font-size:0.8rem; color:var(--text-muted);">Status:</span>
         <div class="status-selector">
-          <button id="status-opt-disp" class="status-opt active-disp"
-            onclick="alterarStatusMonitorMock('Disponível')">Disponível</button>
-          <button id="status-opt-np" class="status-opt"
-            onclick="alterarStatusMonitorMock('Não Perturbe')">Indisponível</button>
+          <button id="status-opt-disp" class="status-opt active-disp" onclick="alterarStatusMonitorMock('Disponível')">Disponível</button>
+          <button id="status-opt-np" class="status-opt" onclick="alterarStatusMonitorMock('Não Perturbe')">Indisponível</button>
         </div>
       </div>
     </div>
 
     <div class="dashboard-stats-compact">
-      <div class="stat-box-compact">
-        <span class="stat-label-compact">Casos em Aberto:</span>
-        <span class="stat-value-compact" id="stat-tratativa" style="color:var(--info);">0</span>
-      </div>
       <div class="stat-box-compact">
         <span class="stat-label-compact">Aguardando triagem:</span>
         <span class="stat-value-compact" id="stat-pendentes">0</span>
@@ -507,8 +494,7 @@
 
     <div class="filter-bar">
       <div style="flex:1;">
-        <input type="text" id="search-input" oninput="renderizarTudo()"
-          placeholder="🔍  Pesquisar por operador, PA ou descrição...">
+        <input type="text" id="search-input" oninput="renderizarTudo()" placeholder="🔍  Pesquisar por operador, PA ou descrição...">
       </div>
       <div style="min-width:240px;">
         <select id="filter-direcionamento" onchange="renderizarTudo()">
@@ -521,6 +507,12 @@
           <option value="Em Verificação">Em tratativa técnica</option>
           <option value="Concluído">Histórico concluído</option>
         </select>
+        <select id="filter-prioridade" onchange="renderizarTudo()">
+          <option value="Todas">Qualquer prioridade</option>
+          <option value="Atenção">Atenção (1d+)</option>
+          <option value="Urgente">Urgente (2d+)</option>
+          <option value="Crítico">Crítico (3d+)</option>
+        </select>
       </div>
     </div>
 
@@ -531,8 +523,7 @@
 
     <div class="section-monitor-fluid archive-section">
       <div class="archive-header" onclick="toggleArquivoRetratil()">
-        <h3><i class="fa-solid fa-box-archive" style="color:var(--text-muted);"></i> Histórico de casos solucionados
-          (<span id="count-arquivados">0</span>)</h3>
+        <h3><i class="fa-solid fa-box-archive" style="color:var(--text-muted);"></i> Histórico de casos solucionados (<span id="count-arquivados">0</span>)</h3>
         <i id="archive-arrow" class="fa-solid fa-chevron-down"></i>
       </div>
       <div id="container-arquivo-retratil" class="archive-body-content">
@@ -552,32 +543,32 @@
     } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     const firebaseConfig = {
-      apiKey: "AIzaSyB6WQibm5djPFYHUjuW8G8XZENzofVA5eA",
-      authDomain: "suppaciente-testes.firebaseapp.com",
-      databaseURL: "https://suppaciente-testes-default-rtdb.firebaseio.com",
-      projectId: "suppaciente-testes",
-      storageBucket: "suppaciente-testes.firebasestorage.app",
+      apiKey:            "AIzaSyB6WQibm5djPFYHUjuW8G8XZENzofVA5eA",
+      authDomain:        "suppaciente-testes.firebaseapp.com",
+      databaseURL:       "https://suppaciente-testes-default-rtdb.firebaseio.com",
+      projectId:         "suppaciente-testes",
+      storageBucket:     "suppaciente-testes.firebasestorage.app",
       messagingSenderId: "86414407394",
-      appId: "1:86414407394:web:4f98ba9dc3f2547f0f90bb",
-      measurementId: "G-7T2WVE075N",
+      appId:             "1:86414407394:web:4f98ba9dc3f2547f0f90bb",
+      measurementId:     "G-7T2WVE075N",
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    const db  = getDatabase(app);
 
-    window.fbDB = db;
-    window.fbRef = ref;
-    window.fbSet = set;
-    window.fbRemove = remove;
-    window.fbOnValue = onValue;
-    window.fbOnChildAdded = onChildAdded;
+    window.fbDB             = db;
+    window.fbRef            = ref;
+    window.fbSet            = set;
+    window.fbRemove         = remove;
+    window.fbOnValue        = onValue;
+    window.fbOnChildAdded   = onChildAdded;
     window.fbOnChildChanged = onChildChanged;
     window.fbOnChildRemoved = onChildRemoved;
-    window.fbOnDisconnect = onDisconnect;
-    window.fbUpdate = update;
-    window.fbQuery = query;
-    window.fbOrderByChild = orderByChild;
-    window.fbLimitToLast = limitToLast;
+    window.fbOnDisconnect   = onDisconnect;
+    window.fbUpdate         = update;
+    window.fbQuery          = query;
+    window.fbOrderByChild   = orderByChild;
+    window.fbLimitToLast    = limitToLast;
 
     if (typeof window.inicializarSincronismoFirebase === "function") {
       window.inicializarSincronismoFirebase();
@@ -586,5 +577,4 @@
 
   <script src="script.js"></script>
 </body>
-
 </html>
