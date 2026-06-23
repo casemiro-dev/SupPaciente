@@ -40,6 +40,31 @@ function nl2br(v)        { return escapeHtml(v).replace(/\n/g, "<br>"); }
 function inlineTexto(v)  { return escapeHtml(v).replace(/\s+/g, " ").trim(); }
 window.escapeHtml = escapeHtml;
 
+function getPrioridadeInfo(timestamp, status) {
+  if (status === "Concluído") return { nivel: 0, label: "", classe: "" };
+  const diffDias = (Date.now() - timestamp) / (1000 * 60 * 60 * 24);
+  if (diffDias >= 3) return { nivel: 3, label: "Crítico", classe: "priority-critical" };
+  if (diffDias >= 2) return { nivel: 2, label: "Urgente", classe: "priority-danger" };
+  if (diffDias >= 1) return { nivel: 1, label: "Atenção", classe: "priority-warning" };
+  return { nivel: 0, label: "", classe: "" };
+}
+
+function formatTempoDecorrido(timestamp) {
+  const diffMin = Math.floor((Date.now() - timestamp) / 60000);
+  if (diffMin < 60) return diffMin + "m em aberto";
+  const diffHoras = Math.floor(diffMin / 60);
+  if (diffHoras < 24) return diffHoras + "h " + (diffMin % 60) + "m em aberto";
+  const diffDias = Math.floor(diffHoras / 24);
+  return diffDias + "d " + (diffHoras % 24) + "h em aberto";
+}
+
+function formatDataCriacao(timestamp) {
+  return new Date(timestamp).toLocaleString("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
 // --------------------------------------------------------------------------
 // CONFIG
 // --------------------------------------------------------------------------
@@ -938,7 +963,7 @@ window.abrirModalCaso = function (id) {
   document.getElementById("modal-titulo-caso").innerText = caso.titulo;
   document.getElementById("modal-descricao-caso").innerText = caso.descricao;
   document.getElementById("modal-op-pa").innerHTML =
-    `<i class="fa-solid fa-headset"></i> Operador: <strong>${escapeHtml(caso.operador)}</strong> (PA ${escapeHtml(caso.pa)}) · <strong>Criado:</strong> ${new Date(caso.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`;
+    `<i class="fa-solid fa-headset"></i> Operador: <strong>${escapeHtml(caso.operador)}</strong> (PA ${escapeHtml(caso.pa)}) · <strong>Criado:</strong> ${new Date(caso.timestamp).toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit', day:'2-digit', month:'2-digit'})}`;
   document.getElementById("modal-direcionamento").innerHTML = caso.monitorDirecionado
     ? `<i class="fa-solid fa-arrow-turn-up"></i> <strong>Direcionado:</strong> ${escapeHtml(caso.monitorDirecionado)}${caso.direcionadoEm ? ' · ' + new Date(caso.direcionadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}`
     : "";
@@ -1019,11 +1044,11 @@ window.atualizarApenasTempoEStatusModal = function () {
   const caso = buscarCaso(idCasoModalAberto);
   const el = document.getElementById("modal-timer-status");
   if (!caso || !el) return;
-  const minPassados = Math.floor((Date.now() - caso.timestamp) / 60000);
-  const horaCriacao = new Date(caso.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const horaCriacao = new Date(caso.timestamp).toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit', day:'2-digit', month:'2-digit'});
+  const tempoLabel = formatTempoDecorrido(caso.timestamp);
   let badge = "";
-  if (caso.status === "Pendente")       badge = `<span class="badge warning">Aguardando (${minPassados}m · ${horaCriacao})</span>`;
-  if (caso.status === "Em Verificação") badge = `<span class="badge info">Em tratativa por ${escapeHtml(caso.monitorAtendente)} (${minPassados}m · ${horaCriacao})</span>`;
+  if (caso.status === "Pendente")       badge = `<span class="badge warning">Aguardando (${tempoLabel} · ${horaCriacao})</span>`;
+  if (caso.status === "Em Verificação") badge = `<span class="badge info">Em tratativa por ${escapeHtml(caso.monitorAtendente)} (${tempoLabel} · ${horaCriacao})</span>`;
   if (caso.status === "Concluído")      badge = `<span class="badge success">Solucionado (${horaCriacao})</span>`;
   el.innerHTML = badge;
 };
@@ -1094,10 +1119,11 @@ window.renderizarTudo = function () {
     } else {
       meus.forEach((c) => {
         const card = document.createElement("div");
-        card.className = `case-card ${c.status === "Concluído" ? "card-concluido" : ""}`;
+        const prio = getPrioridadeInfo(c.timestamp, c.status);
+        card.className = `case-card ${c.status === "Concluído" ? "card-concluido" : ""}${prio.classe ? " " + prio.classe : ""}`;
         let badge = "", acoes = "";
         if (c.status === "Pendente") {
-          badge = `<span class="badge warning">Aguardando (${min(c.timestamp)}m · ${new Date(c.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})})</span>`;
+          badge = `<span class="badge warning">Aguardando</span>`;
           acoes = `<div class="card-actions-row">
             <button class="btn-secondary" onclick="event.stopPropagation(); editarCasoOperadorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-pen"></i> Editar</button>
             <button class="btn-danger" onclick="event.stopPropagation(); cancelarCasoOperadorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-trash"></i> Cancelar</button>
@@ -1114,11 +1140,16 @@ window.renderizarTudo = function () {
         const labelDir = c.monitorDirecionado
           ? `<div class="tag-monitor-direcionado"><i class="fa-solid fa-arrow-turn-up"></i> ${escapeHtml(c.monitorDirecionado)}${c.direcionadoEm ? ' · ' + new Date(c.direcionadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}</div>` : "";
         // Preview em linha corrida (sem <br>), igual ao layout antigo (Imagem 1).
-        card.innerHTML = `
-          <div class="card-top-info"><span>${escapeHtml(c.id)}</span> ${badge}</div>
-          <h4>${escapeHtml(c.titulo)}</h4>
-          <p class="desc-truncada">${inlineTexto(c.descricao)}</p>
-          ${labelDir}${acoes}`;
+          card.innerHTML = `
+            <div class="card-top-info"><span>${escapeHtml(c.id)}</span> ${badge}</div>
+            <div class="card-meta">
+              <span><i class="fa-regular fa-calendar"></i> ${formatDataCriacao(c.timestamp)}</span>
+              ${c.status !== "Concluído" ? `<span><i class="fa-regular fa-clock"></i> ${formatTempoDecorrido(c.timestamp)}</span>` : ''}
+              ${prio.label ? `<span class="priority-pill ${prio.classe}">${prio.label}</span>` : ''}
+            </div>
+            <h4>${escapeHtml(c.titulo)}</h4>
+            <p class="desc-truncada">${inlineTexto(c.descricao)}</p>
+            ${labelDir}${acoes}`;
         card.addEventListener("click", (e) => {
           if (e.target.closest(".card-actions-row")) return;
           window.abrirModalCaso(c.id);
@@ -1156,16 +1187,15 @@ window.renderizarTudo = function () {
   const countArq = document.getElementById("count-arquivados");
   const statPend = document.getElementById("stat-pendentes");
   const statConcl = document.getElementById("stat-concluidos");
-  const statTratativa = document.getElementById("stat-tratativa");
 
   const termo = document.getElementById("search-input")?.value.toLowerCase() || "";
   const filDir = document.getElementById("filter-direcionamento")?.value || "Todos";
   const filSt = document.getElementById("filter-status")?.value || "Todos";
+  const filPri = document.getElementById("filter-prioridade")?.value || "Todas";
 
   if (listaFila && listaArq) {
     listaFila.innerHTML = ""; listaArq.innerHTML = "";
     let totalPend = 0, totalConcl = 0;
-    let totalTratativa = 0;
     casos.forEach((c) => {
       if (c.status === "Pendente") totalPend++;
       if (c.status === "Concluído") totalConcl++;
@@ -1178,19 +1208,16 @@ window.renderizarTudo = function () {
       const matchDir = filDir !== "Meus" || !monitorSessao
         ? true
         : (c.monitorDirecionado === monitorSessao.nome || c.monitorAtendente === monitorSessao.nome);
-
-      if (matchBusca && matchDir && c.status !== "Concluído") {
-        totalTratativa++;
-      }
-
       const matchSt = filSt === "Todos" ? true : c.status === filSt;
-      if (!matchBusca || !matchDir || !matchSt) return;
+      const matchPri = filPri === "Todas" ? true : getPrioridadeInfo(c.timestamp, c.status).label === filPri;
+      if (!matchBusca || !matchDir || !matchSt || !matchPri) return;
 
       const card = document.createElement("div");
-      card.className = `case-card ${c.status === "Concluído" ? "card-concluido" : ""}`;
+      const prio = getPrioridadeInfo(c.timestamp, c.status);
+      card.className = `case-card ${c.status === "Concluído" ? "card-concluido" : ""}${prio.classe ? " " + prio.classe : ""}`;
       let badge = "", acao = "";
       if (c.status === "Pendente") {
-        badge = `<span class="badge warning">Pendente (${min(c.timestamp)}m · ${new Date(c.timestamp).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})})</span>`;
+        badge = `<span class="badge warning">Pendente</span>`;
         acao = `<button class="btn-success" onclick="event.stopPropagation(); atenderCasoMonitorMock('${escapeHtml(c.id)}')"><i class="fa-solid fa-handshake-angle"></i> Assumir tratativa</button>`;
       } else if (c.status === "Em Verificação") {
         const souEu = monitorSessao && c.monitorAtendente === monitorSessao.nome;
@@ -1207,6 +1234,11 @@ window.renderizarTudo = function () {
         ? `<div class="tag-monitor-direcionado ${monitorSessao && c.monitorDirecionado === monitorSessao.nome ? "destacado" : ""}"><i class="fa-solid fa-user-tag"></i> ${escapeHtml(c.monitorDirecionado)}${c.direcionadoEm ? ' · ' + new Date(c.direcionadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}</div>` : "";
       card.innerHTML = `
         <div class="card-top-info"><strong>PA ${escapeHtml(c.pa)} • ${escapeHtml(c.operador)}</strong> ${badge}</div>
+        <div class="card-meta">
+          <span><i class="fa-regular fa-calendar"></i> ${formatDataCriacao(c.timestamp)}</span>
+          ${c.status !== "Concluído" ? `<span><i class="fa-regular fa-clock"></i> ${formatTempoDecorrido(c.timestamp)}</span>` : ''}
+          ${prio.label ? `<span class="priority-pill ${prio.classe}">${prio.label}</span>` : ''}
+        </div>
         <h4>${escapeHtml(c.titulo)}</h4>
         <p class="desc-truncada">${inlineTexto(c.descricao)}</p>
         ${labelDir}${acao}`;
@@ -1221,7 +1253,6 @@ window.renderizarTudo = function () {
     if (statPend) statPend.innerText = totalPend;
     if (statConcl) statConcl.innerText = totalConcl;
     if (countArq) countArq.innerText = listaArq.children.length;
-    if (statTratativa) statTratativa.innerText = totalTratativa;
     if (!listaFila.children.length) {
       listaFila.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); padding:24px; text-align:center; font-style:italic;">Nenhum chamado ativo na fila atende aos filtros definidos.</div>`;
     }
