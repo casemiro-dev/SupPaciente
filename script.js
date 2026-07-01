@@ -40,6 +40,12 @@ function nl2br(v)        { return escapeHtml(v).replace(/\n/g, "<br>"); }
 function inlineTexto(v)  { return escapeHtml(v).replace(/\s+/g, " ").trim(); }
 window.escapeHtml = escapeHtml;
 
+function autoResizeTextarea(el) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+}
+
 function getPrioridadeInfo(timestamp, status) {
   if (status === "Concluído") return { nivel: 0, label: "", classe: "" };
   const diffDias = (Date.now() - timestamp) / (1000 * 60 * 60 * 24);
@@ -333,6 +339,7 @@ window.aplicarScript = function (tipo) {
   if (!titulo || !desc || !r) return;
   titulo.value = r.t;
   desc.value = r.d;
+  autoResizeTextarea(desc);
   window.lancarToast("Roteiro rápido inserido no formulário.", "info");
 };
 
@@ -1421,6 +1428,14 @@ window.addEventListener("DOMContentLoaded", () => {
   ligarEnter(document.getElementById("admin-senha-login"),  () => window.loginAdminMock());
 
   document.getElementById("limpeza-periodo")?.addEventListener("change", atualizarPreviewLimpeza);
+
+  ["caso-descricao", "editar-caso-descricao"].forEach(id => {
+    const ta = document.getElementById(id);
+    if (ta) {
+      autoResizeTextarea(ta);
+      ta.addEventListener("input", function () { autoResizeTextarea(this); });
+    }
+  });
 
   document.getElementById("modal-notif-operador")?.addEventListener("click", (e) => {
     if (e.target.id === "modal-notif-operador") window.fecharModalNotificacoes();
