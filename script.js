@@ -76,6 +76,7 @@ function formatDataCriacao(timestamp) {
 // --------------------------------------------------------------------------
 const ADMIN_PASSWORD       = "casemiro2026";
 const MONITOR_PASSWORD     = null; // null = aceita qualquer senha
+const RH_PASSWORD          = "rh2026"; // TODO: trocar pela senha real do setor de RH
 const HEARTBEAT_INTERVALO  = 25_000;
 const HEARTBEAT_EXPIRACAO  = 75_000;
 const CHAVE_NOTIF_LIDAS    = "teleflow_notif_dismissed";
@@ -84,11 +85,16 @@ const CASOS_LIMITE         = 300; // máximo de casos baixados (mais recentes)
 // --------------------------------------------------------------------------
 // ESTADO
 // --------------------------------------------------------------------------
-const localDB = { casos: {}, alertas_pa: [], monitores_online: [], notificacoes: [] };
+const localDB = { casos: {}, alertas_pa: [], monitores_online: [], notificacoes: [], avisos_rh: [], operadores_online: [] };
 const controleTamanhoAntigo = { alertas: 0, notif: 0 };
 let arquivoAberto = false;
 let idCasoModalAberto = null;
 let heartbeatTimer = null;
+
+// Fila de chamados do RH ainda não exibidos/confirmados pelo operador nesta aba.
+const avisosRHJaNotificados = new Set();
+let avisoRHModalAtualId = null;
+let operadorSelecionadoRHPa = null; // PA escolhida via clique no card (não digitação)
 
 // Proteção: só permite escrita após o primeiro snapshot de cada coleção crítica.
 let firebaseCarregado = false;
@@ -97,6 +103,7 @@ const filaPosCarga = [];
 let operadorSessao = JSON.parse(sessionStorage.getItem("teleflow_op_session"))    || null;
 let monitorSessao  = JSON.parse(sessionStorage.getItem("teleflow_mon_session"))   || null;
 let adminSessao    = JSON.parse(sessionStorage.getItem("teleflow_admin_session")) || null;
+let rhSessao       = JSON.parse(sessionStorage.getItem("teleflow_rh_session"))    || null;
 
 // --------------------------------------------------------------------------
 // RENDER COM DEBOUNCE (evita thrashing em rajadas do Firebase)
@@ -168,6 +175,22 @@ window.inicializarSincronismoFirebase = function () {
     const v = snap.val();
     localDB.monitores_online = v ? Object.values(v) : [];
     agendarRender();
+  });
+
+  window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/operadores_online"), (snap) => {
+    const v = snap.val();
+    localDB.operadores_online = v ? Object.values(v) : [];
+    agendarRender();
+  });
+
+  window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/avisos_rh"), (snap) => {
+    const v = snap.val();
+    localDB.avisos_rh = v ? Object.values(v) : [];
+    localDB.avisos_rh.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    agendarRender();
+    // A checagem de "preciso abrir o modal automaticamente?" roda sempre
+    // que essa coleção muda, independente do debounce do render geral.
+    window.verificarAvisosRHPendentes();
   });
 
   window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/notificacoes"), (snap) => {
@@ -303,6 +326,116 @@ window.lancarToast = function (mensagem, tipo = "info") {
   setTimeout(() => { toast.classList.remove("show"); setTimeout(() => toast.remove(), 300); }, 4500);
 };
 
+window.lancarNotificacaoVisualRH = function (texto) {
+  window.lancarToast(texto, "warning");
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("📋 Chamado do RH • Teleflow", { body: texto });
+  }
+  try {
+    // Bipe curto (dois tons) via WebAudio, sem depender de arquivo externo.
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 660].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + i * 0.22 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.22 + 0.2);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.22);
+      osc.stop(ctx.currentTime + i * 0.22 + 0.22);
+    });
+  } catch (e) { /* ambiente sem suporte a áudio — ignora silenciosamente */ }
+};
+
+// --------------------------------------------------------------------------
+// AVISOS DO RH (chamado presencial do operador até a sala do RH)
+// --------------------------------------------------------------------------
+// Verifica se existe algum aviso "Pendente" endereçado à PA do operador
+// logado nesta aba e, se houver, força a abertura do modal obrigatório —
+// mesmo que o operador não tenha clicado em nada. Persiste entre F5 porque
+// a condição é sempre "existe algo Pendente pra minha PA no banco?".
+window.verificarAvisosRHPendentes = function () {
+  if (!operadorSessao) return;
+  const modal = document.getElementById("modal-aviso-rh");
+  if (!modal) return;
+
+  const pendentes = localDB.avisos_rh
+    .filter(a => a.status === "Pendente" && Number(a.pa) === Number(operadorSessao.pa))
+    .sort((a, b) => a.timestamp - b.timestamp); // mais antigo primeiro
+
+  if (pendentes.length === 0) {
+    if (modal.classList.contains("open")) modal.classList.remove("open");
+    avisoRHModalAtualId = null;
+    return;
+  }
+
+  const proximo = pendentes[0];
+
+  // Toca alerta sonoro/visual só na primeira vez que este aviso aparece nesta aba.
+  if (!avisosRHJaNotificados.has(proximo.id)) {
+    avisosRHJaNotificados.add(proximo.id);
+    window.lancarNotificacaoVisualRH(`RH está chamando você (PA ${proximo.pa}) até ${proximo.local || "a sala do RH"}.`);
+  }
+
+  // Já está exibindo esse mesmo aviso? Não precisa reabrir.
+  if (avisoRHModalAtualId === proximo.id && modal.classList.contains("open")) return;
+
+  avisoRHModalAtualId = proximo.id;
+  document.getElementById("aviso-rh-hora").innerHTML =
+    `<i class="fa-regular fa-clock"></i> ${new Date(proximo.timestamp).toLocaleString("pt-BR")}`;
+  document.getElementById("aviso-rh-local").innerText = proximo.local || "Sala do RH";
+  document.getElementById("aviso-rh-mensagem").innerText = proximo.mensagem || "";
+
+  const btnConfirmar = document.getElementById("modal-btn-confirmar-aviso-rh");
+  btnConfirmar.onclick = function () { window.confirmarAvisoRH(proximo.id); };
+
+  modal.classList.add("open");
+};
+
+window.confirmarAvisoRH = function (id) {
+  if (!_podeEscrever()) return;
+  window.fbUpdate(window.fbRef(window.fbDB, `teleflow_sandbox/avisos_rh/${id}`), {
+    status: "Confirmado",
+    confirmadoEm: Date.now(),
+  });
+  document.getElementById("modal-aviso-rh")?.classList.remove("open");
+  avisoRHModalAtualId = null;
+  window.lancarToast("Confirmado. Dirija-se ao RH.", "success");
+};
+
+window.criarAvisoRHMock = function () {
+  if (!rhSessao) return;
+  const pa = document.getElementById("rh-aviso-pa")?.value.trim();
+  const operadorNome = document.getElementById("rh-aviso-operador")?.value.trim();
+  const local = document.getElementById("rh-aviso-local")?.value.trim() || "Sala do RH";
+  const mensagem = document.getElementById("rh-aviso-mensagem")?.value.trim() || "";
+
+  if (!pa || isNaN(Number(pa))) { window.lancarToast("Informe o número da PA do operador.", "danger"); return; }
+
+  const aviso = {
+    id: "rh_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+    pa: Number(pa),
+    operador: operadorNome || "",
+    local, mensagem,
+    criadoPor: rhSessao.nome,
+    timestamp: Date.now(),
+    status: "Pendente",
+    confirmadoEm: null,
+  };
+  window.salvarItem("avisos_rh", aviso);
+
+  window.limparSelecaoOperadorRH();
+  document.getElementById("rh-aviso-mensagem").value = "";
+  window.lancarToast(`Chamado enviado para a PA ${pa}.`, "success");
+};
+
+window.cancelarAvisoRHMock = function (id) {
+  window.removerItem("avisos_rh", id);
+  window.lancarToast("Chamado removido.", "info");
+};
+
 window.lancarNotificacaoVisualMonitor = function (texto) {
   window.lancarToast(texto, "danger");
   if ("Notification" in window && Notification.permission === "granted") {
@@ -363,17 +496,40 @@ function getMonitoresAtivosUnicos() {
   return Array.from(porNome.values());
 }
 
+// Operadores conectados agora, deduplicados por PA (a última sessão a bater
+// heartbeat naquela PA "vence" — reflete quem está fisicamente lá).
+function getOperadoresAtivosUnicos() {
+  const agora = Date.now();
+  const ativos = localDB.operadores_online.filter(o =>
+    !o.lastSeen || (agora - o.lastSeen) < HEARTBEAT_EXPIRACAO
+  );
+  const porPA = new Map();
+  ativos.forEach(o => {
+    const atual = porPA.get(o.pa);
+    if (!atual || (o.lastSeen || 0) > (atual.lastSeen || 0)) porPA.set(o.pa, o);
+  });
+  return Array.from(porPA.values()).sort((a, b) => a.pa - b.pa);
+}
+
 function dispararHeartbeat() {
-  if (!monitorSessao) return;
   aposFirebaseCarregar(() => {
-    const registro = {
-      id: monitorSessao.id,
-      sessionId: monitorSessao.sessionId,
-      nome: monitorSessao.nome,
-      status: monitorSessao.status,
-      lastSeen: Date.now(),
-    };
-    window.salvarItem("monitores_online", registro);
+    if (monitorSessao) {
+      window.salvarItem("monitores_online", {
+        id: monitorSessao.id,
+        sessionId: monitorSessao.sessionId,
+        nome: monitorSessao.nome,
+        status: monitorSessao.status,
+        lastSeen: Date.now(),
+      });
+    }
+    if (operadorSessao) {
+      window.salvarItem("operadores_online", {
+        id: operadorSessao.id,
+        nome: operadorSessao.nome,
+        pa: operadorSessao.pa,
+        lastSeen: Date.now(),
+      });
+    }
   });
 }
 
@@ -391,19 +547,25 @@ function pararHeartbeat() {
 setInterval(() => {
   if (!firebaseCarregado) return;
   const agora = Date.now();
-  const fantasmas = localDB.monitores_online.filter(m =>
+  const fantasmasMonitor = localDB.monitores_online.filter(m =>
     m.lastSeen && (agora - m.lastSeen) >= HEARTBEAT_EXPIRACAO
   );
-  if (fantasmas.length) {
-    const ids = fantasmas.map(m => m.id);
-    window.removerVarios("monitores_online", ids);
+  if (fantasmasMonitor.length) {
+    window.removerVarios("monitores_online", fantasmasMonitor.map(m => m.id));
+  }
+  const fantasmasOperador = localDB.operadores_online.filter(o =>
+    o.lastSeen && (agora - o.lastSeen) >= HEARTBEAT_EXPIRACAO
+  );
+  if (fantasmasOperador.length) {
+    window.removerVarios("operadores_online", fantasmasOperador.map(o => o.id));
   }
 }, 30_000);
 
 window.addEventListener("beforeunload", () => {
-  if (!monitorSessao || !window.fbDB) return;
+  if (!window.fbDB) return;
   try {
-    window.fbRemove(window.fbRef(window.fbDB, `teleflow_sandbox/monitores_online/${monitorSessao.id}`));
+    if (monitorSessao) window.fbRemove(window.fbRef(window.fbDB, `teleflow_sandbox/monitores_online/${monitorSessao.id}`));
+    if (operadorSessao) window.fbRemove(window.fbRef(window.fbDB, `teleflow_sandbox/operadores_online/${operadorSessao.id}`));
   } catch (e) {}
 });
 
@@ -411,11 +573,23 @@ window.addEventListener("beforeunload", () => {
 // FLUXOS DO OPERADOR
 // --------------------------------------------------------------------------
 window.iniciarSessaoOperadorMock = function () {
-  const nome = document.getElementById("op-nome")?.value.trim();
+  const nome = document.getElementById("op-nome")?.value.trim().replace(/\s+/g, " ");
   const pa   = document.getElementById("op-pa")?.value.trim();
   if (!nome || !pa) { window.lancarToast("Preencha seu nome e o número da PA.", "danger"); return; }
 
-  operadorSessao = { nome, pa: parseInt(pa, 10) };
+  // Exige nome + sobrenome (nome composto) para reduzir ambiguidade de
+  // operadores com o mesmo primeiro nome — enquanto não há cadastro fixo
+  // de usuários, esta é a validação possível.
+  const partesNome = nome.split(" ").filter(Boolean);
+  if (partesNome.length < 2 || partesNome.some(p => p.length < 2)) {
+    window.lancarToast("Informe seu nome completo!!", "danger");
+    return;
+  }
+
+  operadorSessao = {
+    id: "op_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+    nome, pa: parseInt(pa, 10),
+  };
   sessionStorage.setItem("teleflow_op_session", JSON.stringify(operadorSessao));
 
   document.getElementById("txt-op-nome").innerText = nome;
@@ -423,11 +597,14 @@ window.iniciarSessaoOperadorMock = function () {
   document.getElementById("form-identificacao").style.display = "none";
   document.getElementById("area-operador").style.display      = "block";
 
+  iniciarHeartbeat();
   window.lancarToast(`Bem-vindo, ${nome}! Conectado à fila.`, "success");
   window.renderizarTudo();
 };
 
 window.limparSessaoESairMock = function () {
+  pararHeartbeat();
+  if (operadorSessao) window.removerItem("operadores_online", operadorSessao.id);
   sessionStorage.removeItem("teleflow_op_session");
   operadorSessao = null;
   document.getElementById("form-identificacao").style.display = "block";
@@ -822,6 +999,28 @@ window.deslogarAdminMock = function () {
   window.irPara("tela-login");
 };
 
+window.loginRHMock = function () {
+  const nome = document.getElementById("rh-nome-login")?.value.trim();
+  const senha = document.getElementById("rh-senha-login")?.value;
+  if (!nome || !senha) { window.lancarToast("Preencha seu nome e a senha do RH.", "danger"); return; }
+  if (senha !== RH_PASSWORD) { window.lancarToast("Senha incorreta.", "danger"); return; }
+
+  rhSessao = { nome, logadoEm: Date.now() };
+  sessionStorage.setItem("teleflow_rh_session", JSON.stringify(rhSessao));
+  document.getElementById("rh-senha-login").value = "";
+  document.getElementById("txt-nome-rh-logado").innerHTML =
+    `<i class="fa-solid fa-id-badge"></i> RH conectado: <strong>${escapeHtml(rhSessao.nome)}</strong>`;
+  window.irPara("tela-rh");
+  window.lancarToast(`Bem-vindo(a), ${nome}!`, "success");
+  window.renderizarTudo();
+};
+
+window.deslogarRHMock = function () {
+  sessionStorage.removeItem("teleflow_rh_session");
+  rhSessao = null;
+  window.irPara("tela-login");
+};
+
 window.trocarAbaAdmin = function (aba) {
   document.querySelectorAll(".admin-tab").forEach(t => t.classList.toggle("active", t.dataset.tab === aba));
   document.querySelectorAll(".admin-tab-content").forEach(c => c.classList.remove("active"));
@@ -1092,7 +1291,10 @@ window.renderizarTudo = function () {
     window.renderizarModalNotificacoes();
   }
 
-  // 3. Alerta presencial / botão
+  // 3. Chamado do RH (modal obrigatório, se houver algo pendente pra minha PA)
+  window.verificarAvisosRHPendentes();
+
+  // 3b. Alerta presencial / botão
   const boxAlertaOp = document.getElementById("alerta-suporte-operador");
   const btnChamarMon = document.getElementById("btn-chamar-monitor");
   if (operadorSessao) {
@@ -1281,7 +1483,78 @@ window.renderizarTudo = function () {
     renderizarRelatorios();
     atualizarPreviewLimpeza();
   }
+
+  // 8. RH
+  if (rhSessao && document.getElementById("tela-rh")?.classList.contains("active")) {
+    renderizarOperadoresOnlineRH();
+    renderizarListaAvisosRH();
+  }
 };
+
+function renderizarOperadoresOnlineRH() {
+  const cont = document.getElementById("grid-operadores-online-rh");
+  if (!cont) return;
+  const ativos = getOperadoresAtivosUnicos();
+  if (ativos.length === 0) {
+    cont.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum operador conectado no momento.</div>`;
+    return;
+  }
+  cont.innerHTML = ativos.map(o => `
+    <div class="monitor-status-card clickable${Number(o.pa) === Number(operadorSelecionadoRHPa) ? ' selecionado' : ''}" data-pa="${escapeHtml(o.pa)}" data-nome="${escapeHtml(o.nome)}" onclick="preencherChamadoRHComOperador(this)">
+      <strong>${escapeHtml(o.nome)}</strong>
+      <span>PA ${escapeHtml(o.pa)}</span>
+    </div>`).join("");
+}
+
+window.preencherChamadoRHComOperador = function (el) {
+  operadorSelecionadoRHPa = el.dataset.pa;
+  const inputPa = document.getElementById("rh-aviso-pa");
+  const inputNome = document.getElementById("rh-aviso-operador");
+  inputPa.value = el.dataset.pa;
+  inputNome.value = el.dataset.nome;
+  inputPa.readOnly = true;
+  inputNome.readOnly = true;
+  document.getElementById("btn-limpar-selecao-rh").style.display = "inline-flex";
+  renderizarOperadoresOnlineRH();
+};
+
+window.limparSelecaoOperadorRH = function () {
+  operadorSelecionadoRHPa = null;
+  const inputPa = document.getElementById("rh-aviso-pa");
+  const inputNome = document.getElementById("rh-aviso-operador");
+  inputPa.value = "";
+  inputNome.value = "";
+  inputPa.readOnly = false;
+  inputNome.readOnly = false;
+  document.getElementById("btn-limpar-selecao-rh").style.display = "none";
+  renderizarOperadoresOnlineRH();
+  inputPa.focus();
+};
+
+function renderizarListaAvisosRH() {
+  const cont = document.getElementById("rh-lista-avisos");
+  if (!cont) return;
+  if (localDB.avisos_rh.length === 0) {
+    cont.innerHTML = `<div style="color:var(--text-muted); padding:10px; text-align:center; font-style:italic;">Nenhum chamado enviado ainda.</div>`;
+    return;
+  }
+  cont.innerHTML = localDB.avisos_rh.map(a => {
+    const confirmado = a.status === "Confirmado";
+    return `
+    <div class="notif-history-item ${confirmado ? "success" : "warning"}">
+      <div>
+        <strong>${confirmado ? '<i class="fa-solid fa-circle-check"></i> Confirmado' : '<i class="fa-solid fa-spinner fa-spin"></i> Pendente'}
+          · PA ${escapeHtml(a.pa)}${a.operador ? ' · ' + escapeHtml(a.operador) : ''}:</strong>
+        ${a.mensagem ? nl2br(a.mensagem) : '<em>(sem observação)</em>'}
+        <div class="nh-time">
+          Enviado em ${new Date(a.timestamp).toLocaleString("pt-BR")}
+          ${confirmado ? ' · confirmado em ' + new Date(a.confirmadoEm).toLocaleString("pt-BR") : ''}
+        </div>
+      </div>
+      ${!confirmado ? `<button onclick="cancelarAvisoRHMock('${escapeHtml(a.id)}')"><i class="fa-solid fa-trash"></i> Cancelar</button>` : ''}
+    </div>`;
+  }).join("");
+}
 
 // --------------------------------------------------------------------------
 // RENDERS DO ADMIN
@@ -1426,6 +1699,8 @@ window.addEventListener("DOMContentLoaded", () => {
   ligarEnter(document.getElementById("monitor-nome-login"), () => window.loginMonitorMock());
   ligarEnter(document.getElementById("monitor-senha-login"),() => window.loginMonitorMock());
   ligarEnter(document.getElementById("admin-senha-login"),  () => window.loginAdminMock());
+  ligarEnter(document.getElementById("rh-nome-login"),      () => window.loginRHMock());
+  ligarEnter(document.getElementById("rh-senha-login"),     () => window.loginRHMock());
 
   document.getElementById("limpeza-periodo")?.addEventListener("change", atualizarPreviewLimpeza);
 
@@ -1452,6 +1727,7 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("txt-op-pa").innerText = `PA ${operadorSessao.pa}`;
     document.getElementById("form-identificacao").style.display = "none";
     document.getElementById("area-operador").style.display = "block";
+    iniciarHeartbeat();
     window.irPara("tela-operador");
   }
 
@@ -1474,6 +1750,12 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   if (adminSessao) window.irPara("tela-admin");
+
+  if (rhSessao) {
+    document.getElementById("txt-nome-rh-logado").innerHTML =
+      `<i class="fa-solid fa-id-badge"></i> RH conectado: <strong>${escapeHtml(rhSessao.nome)}</strong>`;
+    window.irPara("tela-rh");
+  }
 
   window.renderizarTudo();
 });
