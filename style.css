@@ -287,6 +287,22 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
 }
 .monitor-status-card.np strong { color: var(--danger); }
 .monitor-status-card.np span { color: var(--danger); }
+.monitor-status-card.clickable {
+  cursor: pointer;
+  border-left-color: var(--warning);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+.monitor-status-card.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+  border-color: var(--warning);
+}
+.monitor-status-card.clickable.selecionado {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  box-shadow: 0 0 0 2px var(--warning);
+}
+.monitor-status-card.clickable.selecionado strong { color: var(--warning); }
 
 /* ---------- 11. ROTEIROS ---------- */
 .shortcuts-wrapper { margin: 22px 0; }
@@ -486,6 +502,18 @@ button:focus-visible { outline: 3px solid var(--primary-ring); outline-offset: 2
   animation: fadeIn 0.2s ease;
 }
 .modal-overlay.active, .modal-overlay.open { display: flex; }
+
+/* ---------- 20b. MODAL DE CHAMADO DO RH (obrigatório / urgente) ---------- */
+.modal-rh-urgente .modal-card {
+  border: 2px solid var(--warning);
+  box-shadow: var(--shadow-lg), 0 0 0 4px var(--warning-soft);
+  animation: modalIn 0.25s cubic-bezier(0.4, 0, 0.2, 1), pulseRH 1.8s ease-in-out infinite;
+}
+.modal-rh-urgente .modal-header { border-bottom-color: var(--warning); }
+@keyframes pulseRH {
+  0%, 100% { box-shadow: var(--shadow-lg), 0 0 0 4px var(--warning-soft); }
+  50%      { box-shadow: var(--shadow-lg), 0 0 0 8px var(--warning-soft); }
+}
 
 .modal-card {
   width: 100%; max-width: 620px; max-height: 90vh;

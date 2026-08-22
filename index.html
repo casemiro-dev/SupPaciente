@@ -124,6 +124,27 @@
     </div>
   </div>
 
+  <!-- Modal de chamado do RH (operador) — obrigatório, sem botão de fechar -->
+  <div id="modal-aviso-rh" class="modal-overlay modal-rh-urgente" role="alertdialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-file-signature" style="color:var(--warning);"></i> Chamado do RH</h3>
+      </div>
+      <div class="modal-body">
+        <div class="modal-meta-bar">
+          <span id="aviso-rh-hora"></span>
+        </div>
+        <div class="modal-description-box">
+          <p style="margin:0 0 10px;"><i class="fa-solid fa-location-dot"></i> Compareça a: <strong id="aviso-rh-local"></strong></p>
+          <p id="aviso-rh-mensagem" style="margin:0;"></p>
+        </div>
+        <button id="modal-btn-confirmar-aviso-rh" class="btn-success" style="margin-top:18px;">
+          <i class="fa-solid fa-check"></i> Ciente, vou até a sala
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- =====================================================================
        TELA: LOGIN
        ===================================================================== -->
@@ -151,6 +172,16 @@
         </div>
         <button onclick="irPara('tela-login-monitor')" class="btn-secondary">
           Acessar como monitor <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </div>
+
+      <div class="login-card">
+        <div>
+          <h3><i class="fa-solid fa-file-signature" style="color:var(--warning);"></i> Portal do RH</h3>
+          <p>Chame um operador até a sala do RH para assinatura de folhas, férias, advertências e outros comunicados.</p>
+        </div>
+        <button onclick="irPara('tela-login-rh')" class="btn-secondary">
+          Acessar como RH <i class="fa-solid fa-arrow-right"></i>
         </button>
       </div>
     </div>
@@ -215,6 +246,31 @@
 
     <button onclick="loginAdminMock()">
       <i class="fa-solid fa-right-to-bracket"></i> Acessar painel
+    </button>
+  </div>
+
+  <!-- =====================================================================
+       TELA: LOGIN RH
+       ===================================================================== -->
+  <div id="tela-login-rh" class="screen">
+    <button class="btn-back" onclick="irPara('tela-login')">
+      <i class="fa-solid fa-arrow-left"></i> Voltar ao início
+    </button>
+    <h3><i class="fa-solid fa-file-signature" style="color:var(--warning);"></i> Autenticação do RH</h3>
+    <p style="margin-bottom:18px;">Insira seu nome e a credencial do setor para chamar operadores até a sala do RH.</p>
+
+    <div class="input-group">
+      <label>Seu nome</label>
+      <input type="text" id="rh-nome-login" placeholder="Nome de quem está enviando o chamado">
+    </div>
+
+    <div class="input-group">
+      <label>Senha de acesso</label>
+      <input type="password" id="rh-senha-login" placeholder="Digite a senha do RH">
+    </div>
+
+    <button onclick="loginRHMock()" class="btn-success">
+      <i class="fa-solid fa-right-to-bracket"></i> Inicializar painel do RH
     </button>
   </div>
 
@@ -345,6 +401,69 @@
   </div>
 
   <!-- =====================================================================
+       TELA: RH
+       ===================================================================== -->
+  <div id="tela-rh" class="screen monitor-screen-wide">
+    <div class="user-info-bar">
+      <h2 style="margin:0; font-size:1.2rem;">
+        <i class="fa-solid fa-file-signature" style="color:var(--warning);"></i> Painel do RH
+      </h2>
+      <button onclick="deslogarRHMock()" class="btn-back" style="margin:0;">
+        <i class="fa-solid fa-right-from-bracket"></i> Sair
+      </button>
+    </div>
+
+    <div class="user-info-bar">
+      <span id="txt-nome-rh-logado"></span>
+    </div>
+
+    <div class="section-monitor-fluid">
+      <h3><i class="fa-solid fa-signal" style="color:var(--success);"></i> Operadores conectados agora</h3>
+      <p style="margin-bottom:12px; color:var(--text-muted); font-size:0.85rem;">
+        Clique em um operador para preencher a PA automaticamente no chamado abaixo.
+      </p>
+      <div id="grid-operadores-online-rh" class="monitors-grid"></div>
+    </div>
+
+    <div class="section-monitor-fluid">
+      <h3><i class="fa-solid fa-bell-concierge" style="color:var(--warning);"></i> Chamar operador até a sala do RH</h3>
+
+      <div class="input-group">
+        <label><i class="fa-solid fa-desktop"></i> Número da PA do operador</label>
+        <input type="text" id="rh-aviso-pa" inputmode="numeric" placeholder="Clique num operador acima ou digite a PA">
+      </div>
+
+      <div class="input-group">
+        <label>Nome do operador (opcional, apenas identificação)</label>
+        <input type="text" id="rh-aviso-operador" placeholder="Ex: Maria Souza">
+      </div>
+
+      <button type="button" id="btn-limpar-selecao-rh" class="btn-secondary" style="display:none; margin-bottom:14px;" onclick="limparSelecaoOperadorRH()">
+        <i class="fa-solid fa-xmark"></i> Limpar seleção e digitar manualmente
+      </button>
+
+      <div class="input-group">
+        <label><i class="fa-solid fa-location-dot"></i> Local para comparecimento</label>
+        <input type="text" id="rh-aviso-local" placeholder="Ex: Sala do RH" value="Sala do RH">
+      </div>
+
+      <div class="input-group">
+        <label>Observação (opcional)</label>
+        <textarea id="rh-aviso-mensagem" placeholder="Detalhes adicionais para o operador..."></textarea>
+      </div>
+
+      <button id="btn-enviar-aviso-rh" onclick="criarAvisoRHMock()" class="btn-success" style="margin-bottom:24px;">
+        <i class="fa-solid fa-paper-plane"></i> Chamar operador
+      </button>
+    </div>
+
+    <div class="section-monitor-fluid">
+      <h3><i class="fa-solid fa-clock-rotate-left"></i> Chamados enviados</h3>
+      <div id="rh-lista-avisos" class="notif-history"></div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
        TELA: OPERADOR
        ===================================================================== -->
   <div id="tela-operador" class="screen">
@@ -356,8 +475,11 @@
       <p style="margin-bottom:18px;">Insira seu nome e sua posição de atendimento para conectar-se à fila unificada.</p>
 
       <div class="input-group">
-        <label>Nome do operador</label>
-        <input type="text" id="op-nome" placeholder="Seu nome">
+        <label>Nome completo do operador</label>
+        <input type="text" id="op-nome" placeholder="Ex: Maria Souza">
+        <span style="display:block; margin-top:4px; font-size:0.78rem; color:var(--text-muted);">
+          <i class="fa-solid fa-circle-info"></i> Use seu nome completo — evita confusão para o RH e monitoria quando há operadores com o mesmo primeiro nome.
+        </span>
       </div>
       <div class="input-group">
         <label>Número da sua PA</label>
