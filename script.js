@@ -40,6 +40,17 @@ function nl2br(v)        { return escapeHtml(v).replace(/\n/g, "<br>"); }
 function inlineTexto(v)  { return escapeHtml(v).replace(/\s+/g, " ").trim(); }
 window.escapeHtml = escapeHtml;
 
+window.alternarVisibilidadeSenha = function (inputId, botao) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const oculto = input.type === "password";
+  input.type = oculto ? "text" : "password";
+  const icone = botao.querySelector("i");
+  icone.classList.toggle("fa-eye", !oculto);
+  icone.classList.toggle("fa-eye-slash", oculto);
+  botao.setAttribute("aria-label", oculto ? "Ocultar senha" : "Mostrar senha");
+};
+
 function autoResizeTextarea(el) {
   if (!el) return;
   el.style.height = "auto";

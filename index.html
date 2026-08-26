@@ -221,7 +221,12 @@
 
     <div class="input-group">
       <label>Senha de acesso</label>
-      <input type="password" id="monitor-senha-login" placeholder="Digite a senha padrão">
+      <div class="password-field-wrapper">
+        <input type="password" id="monitor-senha-login" placeholder="Digite a senha padrão">
+        <button type="button" class="btn-toggle-senha" onclick="alternarVisibilidadeSenha('monitor-senha-login', this)" aria-label="Mostrar senha">
+          <i class="fa-solid fa-eye"></i>
+        </button>
+      </div>
     </div>
 
     <button onclick="loginMonitorMock()" class="btn-success">
@@ -241,7 +246,12 @@
 
     <div class="input-group">
       <label>Senha administrativa</label>
-      <input type="password" id="admin-senha-login" placeholder="Digite a senha">
+      <div class="password-field-wrapper">
+        <input type="password" id="admin-senha-login" placeholder="Digite a senha">
+        <button type="button" class="btn-toggle-senha" onclick="alternarVisibilidadeSenha('admin-senha-login', this)" aria-label="Mostrar senha">
+          <i class="fa-solid fa-eye"></i>
+        </button>
+      </div>
     </div>
 
     <button onclick="loginAdminMock()">
@@ -266,7 +276,12 @@
 
     <div class="input-group">
       <label>Senha de acesso</label>
-      <input type="password" id="rh-senha-login" placeholder="Digite a senha do RH">
+      <div class="password-field-wrapper">
+        <input type="password" id="rh-senha-login" placeholder="Digite a senha do RH">
+        <button type="button" class="btn-toggle-senha" onclick="alternarVisibilidadeSenha('rh-senha-login', this)" aria-label="Mostrar senha">
+          <i class="fa-solid fa-eye"></i>
+        </button>
+      </div>
     </div>
 
     <button onclick="loginRHMock()" class="btn-success">
