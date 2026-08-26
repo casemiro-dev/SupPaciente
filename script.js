@@ -74,8 +74,8 @@ function formatDataCriacao(timestamp) {
 // --------------------------------------------------------------------------
 // CONFIG
 // --------------------------------------------------------------------------
-const ADMIN_PASSWORD       = "sup.admin";
-const MONITOR_PASSWORD     = "monitor@123"; // TODO: trocar pela senha real da monitoria
+const ADMIN_PASSWORD       = "casemiro2026";
+const MONITOR_PASSWORD     = "monitoria2026"; // TODO: trocar pela senha real da monitoria
 const RH_PASSWORD          = "rh2026"; // TODO: trocar pela senha real do setor de RH
 const HEARTBEAT_INTERVALO  = 25_000;
 const HEARTBEAT_EXPIRACAO  = 75_000;
@@ -156,7 +156,11 @@ window.inicializarSincronismoFirebase = function () {
   // ---------- COLEÇÕES PEQUENAS: onValue normal ----------
   window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/alertas_pa"), (snap) => {
     const v = snap.val();
-    localDB.alertas_pa = v ? Object.values(v) : [];
+    // Usa a CHAVE do Firebase como id, nunca só o campo interno do objeto:
+    // se um registro for corrompido por uma escrita parcial concorrente
+    // (ex: atender x cancelar ao mesmo tempo), o botão "Finalizar" continua
+    // funcionando porque o id nunca fica undefined.
+    localDB.alertas_pa = v ? Object.entries(v).map(([key, val]) => ({ ...val, id: val.id || key })) : [];
     localDB.alertas_pa.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
     if (localDB.alertas_pa.length > controleTamanhoAntigo.alertas && monitorSessao) {
@@ -582,7 +586,7 @@ window.iniciarSessaoOperadorMock = function () {
   // de usuários, esta é a validação possível.
   const partesNome = nome.split(" ").filter(Boolean);
   if (partesNome.length < 2 || partesNome.some(p => p.length < 2)) {
-    window.lancarToast("Informe seu nome completo!!", "danger");
+    window.lancarToast("Informe seu nome completo (ex: Maria Souza).", "danger");
     return;
   }
 
@@ -961,13 +965,15 @@ window.concluirCasoMonitorMock = function (id, feedbackTexto) {
 window.atenderAlertaPresencialMock = function (id) {
   if (!monitorSessao) return;
   const alerta = localDB.alertas_pa.find((a) => a.id === id);
-  if (!alerta) return;
-  alerta.status = "Em Atendimento";
-  alerta.monitorAtendente = monitorSessao.nome;
-  window.atualizarCampos("alertas_pa", id, {
-    status: "Em Atendimento",
-    monitorAtendente: monitorSessao.nome,
-  });
+  if (!alerta) {
+    window.lancarToast("Este chamado não existe mais (o operador pode ter cancelado).", "warning");
+    return;
+  }
+  // Grava o objeto inteiro (não só os campos alterados) — se o operador
+  // cancelar bem nesse instante, uma escrita parcial recriaria o nó no
+  // Firebase faltando pa/operador/id. Reenviar o objeto completo evita isso.
+  const atualizado = { ...alerta, status: "Em Atendimento", monitorAtendente: monitorSessao.nome };
+  window.salvarItem("alertas_pa", atualizado);
   window.lancarToast(`Deslocamento registrado para a PA ${alerta.pa}.`, "info");
 };
 
@@ -1383,7 +1389,7 @@ window.renderizarTudo = function () {
                <button onclick="atenderAlertaPresencialMock('${escapeHtml(a.id)}')" class="btn-success"><i class="fa-solid fa-person-walking-arrow-right"></i> Prestar suporte</button>
              </div>`
           : `<div class="emergency-item" style="border-left-color:var(--success);">
-               <div><i class="fa-solid fa-check-double" style="color:var(--success);"></i> ${escapeHtml(a.monitorAtendente)} em atendimento na PA ${escapeHtml(a.pa)}.</div>
+               <div><i class="fa-solid fa-check-double" style="color:var(--success);"></i> ${escapeHtml(a.monitorAtendente)} em atendimento na PA ${escapeHtml(a.pa || "?")}.</div>
                <button onclick="concluirAlertaPresencialMock('${escapeHtml(a.id)}')" class="btn-secondary"><i class="fa-solid fa-circle-check"></i> Finalizar</button>
              </div>`
       ).join("");
