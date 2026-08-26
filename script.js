@@ -75,7 +75,7 @@ function formatDataCriacao(timestamp) {
 // CONFIG
 // --------------------------------------------------------------------------
 const ADMIN_PASSWORD       = "sup.admin";
-const MONITOR_PASSWORD     = "monitori@123"; // TODO: trocar pela senha real da monitoria
+const MONITOR_PASSWORD     = "monitor@123"; // TODO: trocar pela senha real da monitoria
 const RH_PASSWORD          = "rh2026"; // TODO: trocar pela senha real do setor de RH
 const HEARTBEAT_INTERVALO  = 25_000;
 const HEARTBEAT_EXPIRACAO  = 75_000;
