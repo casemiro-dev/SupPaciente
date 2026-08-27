@@ -86,7 +86,7 @@ function formatDataCriacao(timestamp) {
 // CONFIG
 // --------------------------------------------------------------------------
 const ADMIN_PASSWORD       = "casemiro2026";
-const MONITOR_PASSWORD     = "monitor@123"; // TODO: trocar pela senha real da monitoria
+const MONITOR_PASSWORD     = "monitor@123";
 const RH_PASSWORD          = "rh2026"; // TODO: trocar pela senha real do setor de RH
 const HEARTBEAT_INTERVALO  = 25_000;
 const HEARTBEAT_EXPIRACAO  = 75_000;
@@ -180,7 +180,13 @@ window.inicializarSincronismoFirebase = function () {
         window.lancarNotificacaoVisualMonitor(
           `ALERTA CRÍTICO: PA ${ultimo.pa} (${ultimo.operador}) solicita suporte presencial!`
         );
+        window.iniciarPiscaTitulo("🚨 Chamado na PA!");
       }
+    }
+    // Se não sobrou nenhum chamado presencial aguardando (foi assumido por
+    // outro monitor, cancelado, etc.), encerra o piscar do título.
+    if (monitorSessao && !localDB.alertas_pa.some(a => a.status === "Aguardando")) {
+      window.pararPiscaTitulo();
     }
     controleTamanhoAntigo.alertas = localDB.alertas_pa.length;
     agendarRender();
@@ -318,6 +324,7 @@ window.toggleTheme = function () {
   const body = document.body;
   const novo = body.getAttribute("data-theme") === "dark" ? "light" : "dark";
   body.setAttribute("data-theme", novo);
+  localStorage.setItem("teleflow_tema", novo);
   const icon = document.getElementById("theme-icon");
   const text = document.getElementById("theme-text");
   if (icon) icon.className = novo === "dark" ? "fa-solid fa-sun" : "fa-solid fa-moon";
@@ -456,6 +463,66 @@ window.lancarNotificacaoVisualMonitor = function (texto) {
   if ("Notification" in window && Notification.permission === "granted") {
     new Notification("🚨 Suporte presencial • Teleflow", { body: texto });
   }
+  tocarBipeAlerta([784, 784]);
+};
+
+// --------------------------------------------------------------------------
+// TÍTULO DA ABA PISCANDO — alerta que o monitor percebe mesmo trocado de aba
+// ou minimizado, sem depender de som. Usado só pro chamado presencial.
+// --------------------------------------------------------------------------
+const tituloOriginalDocumento = document.title;
+let intervalPiscaTitulo = null;
+
+window.iniciarPiscaTitulo = function (mensagem) {
+  if (intervalPiscaTitulo) return; // já piscando — não duplica o interval
+  let mostrandoAlerta = false;
+  intervalPiscaTitulo = setInterval(() => {
+    document.title = mostrandoAlerta ? tituloOriginalDocumento : mensagem;
+    mostrandoAlerta = !mostrandoAlerta;
+  }, 1000);
+};
+
+window.pararPiscaTitulo = function () {
+  if (intervalPiscaTitulo) { clearInterval(intervalPiscaTitulo); intervalPiscaTitulo = null; }
+  document.title = tituloOriginalDocumento;
+};
+
+// Assim que o monitor volta o foco pra aba, para de piscar (ele já percebeu).
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) window.pararPiscaTitulo();
+});
+
+// Bipe curto reutilizável (mesma técnica do aviso do RH, isolado numa função
+// própria pra não mexer em nada que já funcionava).
+function tocarBipeAlerta(frequencias) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    frequencias.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + i * 0.22 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.22 + 0.2);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.22);
+      osc.stop(ctx.currentTime + i * 0.22 + 0.22);
+    });
+  } catch (e) { /* ambiente sem suporte a áudio — ignora silenciosamente */ }
+}
+
+// --------------------------------------------------------------------------
+// NOTIFICAÇÃO PRO OPERADOR: monitor a caminho da PA dele
+// --------------------------------------------------------------------------
+const alertasPaCaminhoNotificados = new Set();
+
+window.lancarNotificacaoVisualOperadorCaminho = function (texto) {
+  window.lancarToast(texto, "success");
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("🚗 Monitor a caminho • Teleflow", { body: texto });
+  }
+  tocarBipeAlerta([660, 880]);
 };
 
 window.toggleArquivoRetratil = function () {
@@ -606,6 +673,8 @@ window.iniciarSessaoOperadorMock = function () {
     nome, pa: parseInt(pa, 10),
   };
   sessionStorage.setItem("teleflow_op_session", JSON.stringify(operadorSessao));
+
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
 
   document.getElementById("txt-op-nome").innerText = nome;
   document.getElementById("txt-op-pa").innerText   = `PA ${pa}`;
@@ -1024,6 +1093,9 @@ window.loginRHMock = function () {
 
   rhSessao = { nome, logadoEm: Date.now() };
   sessionStorage.setItem("teleflow_rh_session", JSON.stringify(rhSessao));
+
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+
   document.getElementById("rh-senha-login").value = "";
   document.getElementById("txt-nome-rh-logado").innerHTML =
     `<i class="fa-solid fa-id-badge"></i> RH conectado: <strong>${escapeHtml(rhSessao.nome)}</strong>`;
@@ -1327,6 +1399,10 @@ window.renderizarTudo = function () {
         boxAlertaOp.style.borderLeftColor = "var(--success)";
         boxAlertaOp.innerHTML =
           `<div><i class="fa-solid fa-user-check" style="color:var(--success);"></i> <strong>Monitor a caminho:</strong> ${escapeHtml(alerta.monitorAtendente)} se deslocando até sua PA.</div>`;
+        if (!alertasPaCaminhoNotificados.has(alerta.id)) {
+          alertasPaCaminhoNotificados.add(alerta.id);
+          window.lancarNotificacaoVisualOperadorCaminho(`${alerta.monitorAtendente} está a caminho da sua PA.`);
+        }
       }
       if (btnChamarMon) btnChamarMon.style.display = "none";
     } else {
