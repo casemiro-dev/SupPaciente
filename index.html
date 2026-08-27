@@ -21,6 +21,18 @@
     <span id="theme-text">Modo Claro</span>
   </button>
 
+  <script>
+    // Aplica o tema salvo o mais cedo possível, antes do resto da página
+    // pintar, pra evitar o "flash" de abrir escuro e trocar pra claro na hora.
+    (function () {
+      const salvo = localStorage.getItem("teleflow_tema");
+      if (salvo !== "light" && salvo !== "dark") return;
+      document.body.setAttribute("data-theme", salvo);
+      document.getElementById("theme-icon").className = salvo === "dark" ? "fa-solid fa-sun" : "fa-solid fa-moon";
+      document.getElementById("theme-text").innerText = salvo === "dark" ? "Modo Claro" : "Modo Escuro";
+    })();
+  </script>
+
   <!-- Container de notificações -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
