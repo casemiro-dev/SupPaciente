@@ -119,6 +119,44 @@
     </div>
   </div>
 
+  <!-- Modal de roteiros rápidos (monitor) -->
+  <div id="modal-roteiros" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-bolt" style="color:var(--warning);"></i> Roteiros rápidos (<span id="count-roteiros">0</span>)</h3>
+        <div class="modal-header-actions">
+          <button class="btn-close-modal" onclick="fecharModalRoteiros()" aria-label="Fechar">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--text-muted); font-size:0.85rem; margin:0 0 14px;">
+          Esses roteiros aparecem em tempo real na tela dos operadores, no formulário de abertura de chamado.
+        </p>
+
+        <div class="input-group">
+          <label>Título do botão</label>
+          <input type="text" id="roteiro-titulo-input" placeholder="Ex: Erro de agendamento">
+        </div>
+        <div class="input-group">
+          <label>Texto que preenche o formulário</label>
+          <textarea id="roteiro-texto-input" placeholder="Texto que será inserido no título/descrição do chamado..."></textarea>
+        </div>
+        <div style="display:flex; gap:10px; margin-bottom:20px;">
+          <button id="btn-salvar-roteiro" onclick="salvarRoteiroMonitorMock()" class="btn-success" style="margin:0;">
+            <i class="fa-solid fa-plus"></i> Adicionar roteiro
+          </button>
+          <button id="btn-cancelar-edicao-roteiro" onclick="cancelarEdicaoRoteiroMock()" class="btn-secondary" style="display:none; margin:0;">
+            <i class="fa-solid fa-xmark"></i> Cancelar edição
+          </button>
+        </div>
+
+        <div id="lista-roteiros-monitor" class="notif-history"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal de notificações (operador) -->
   <div id="modal-notif-operador" class="modal-overlay" role="dialog" aria-modal="true">
     <div class="modal-card">
@@ -557,15 +595,7 @@
         <label style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
           <i class="fa-solid fa-bolt"></i> Roteiros rápidos
         </label>
-        <div class="shortcuts-container">
-          <button class="btn-shortcut" onclick="aplicarScript('erroAgendamento')">Erro de agendamento</button>
-          <button class="btn-shortcut" onclick="aplicarScript('desbloqueio')">Desbloqueio</button>
-          <button class="btn-shortcut" onclick="aplicarScript('telefonia')">Telefonia</button>
-          <button class="btn-shortcut" onclick="aplicarScript('cancelamento')">Cancelamento não efetuado</button>
-          <button class="btn-shortcut" onclick="aplicarScript('transferencia')">Autorização de transferência</button>
-          <button class="btn-shortcut" onclick="aplicarScript('fatura')">Correção de fatura</button>
-          <button class="btn-shortcut" onclick="aplicarScript('desconto')">Desconto autorizado</button>
-        </div>
+        <div class="shortcuts-container" id="grid-roteiros-operador"></div>
       </div>
 
       <div class="input-group">
@@ -609,9 +639,14 @@
       <h2 style="margin:0; font-size:1.2rem;">
         <i class="fa-solid fa-eye" style="color:var(--success);"></i> Console do supervisor
       </h2>
-      <button onclick="deslogarMonitorMock()" class="btn-back" style="margin:0;">
-        <i class="fa-solid fa-right-from-bracket"></i> Desconectar
-      </button>
+      <div style="display:flex; gap:10px;">
+        <button onclick="abrirModalRoteiros()" class="btn-secondary" style="margin:0;">
+          <i class="fa-solid fa-bolt"></i> Roteiros rápidos
+        </button>
+        <button onclick="deslogarMonitorMock()" class="btn-back" style="margin:0;">
+          <i class="fa-solid fa-right-from-bracket"></i> Desconectar
+        </button>
+      </div>
     </div>
 
     <div class="user-info-bar">
