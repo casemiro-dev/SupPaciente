@@ -96,7 +96,7 @@ const CASOS_LIMITE         = 300; // máximo de casos baixados (mais recentes)
 // --------------------------------------------------------------------------
 // ESTADO
 // --------------------------------------------------------------------------
-const localDB = { casos: {}, alertas_pa: [], monitores_online: [], notificacoes: [], avisos_rh: [], operadores_online: [] };
+const localDB = { casos: {}, alertas_pa: [], monitores_online: [], notificacoes: [], avisos_rh: [], operadores_online: [], roteiros_rapidos: [] };
 const controleTamanhoAntigo = { alertas: 0, notif: 0 };
 let arquivoAberto = false;
 let idCasoModalAberto = null;
@@ -201,6 +201,23 @@ window.inicializarSincronismoFirebase = function () {
   window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/operadores_online"), (snap) => {
     const v = snap.val();
     localDB.operadores_online = v ? Object.values(v) : [];
+    agendarRender();
+  });
+
+  window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/roteiros_rapidos"), (snap) => {
+    const v = snap.val();
+    if (v === null) {
+      // Primeira vez que essa coleção é acessada: migra os roteiros que
+      // antes eram fixos no código. Usa salvarItem (set por id) com IDs
+      // fixos, então mesmo que dois monitores abram ao mesmo tempo, a
+      // migração nunca duplica os registros.
+      Object.entries(ROTEIROS_SEED).forEach(([id, r], i) => {
+        window.salvarItem("roteiros_rapidos", { id, titulo: r.t, texto: r.d, timestamp: i, criadoPor: "Migração automática" });
+      });
+    } else {
+      localDB.roteiros_rapidos = Object.entries(v).map(([key, val]) => ({ ...val, id: val.id || key }));
+      localDB.roteiros_rapidos.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    }
     agendarRender();
   });
 
@@ -535,9 +552,13 @@ window.toggleArquivoRetratil = function () {
 };
 
 // --------------------------------------------------------------------------
-// ROTEIROS
+// ROTEIROS RÁPIDOS
 // --------------------------------------------------------------------------
-const ROTEIROS = {
+// Conteúdo original, hoje usado só como semente (seed) pra popular o
+// Firebase na primeira vez que o app rodar com essa coleção vazia. Depois
+// da migração, quem manda são os registros em localDB.roteiros_rapidos —
+// gerenciáveis pelo monitor, sem precisar mexer em código.
+const ROTEIROS_SEED = {
   erroAgendamento: { t: "Erro de Agendamento", d: `ADM: \nCaso: \nOS: \nSA-\nCidade: \nTerritório: \nMotivo: \nErro: Não foi possível realizar o agendamento nesse momento. Mas não se preocupe, estamos buscando o melhor horário para encaixe e o cliente será informado.\nDisponibilidade: o dia todo` },
   desbloqueio:     { t: "Desbloqueio", d: `Caso:\nCPF:` },
   telefonia:       { t: "Problema com Telefonia", d: `Caso:\nTelefonia Móvel ou Fixa: \nCPF do cliente:\nNome do Completo do Cliente:\nADM do cliente:\nNúmero da linha:\nProblema relatado:\nProcedimentos realizados:` },
@@ -547,16 +568,117 @@ const ROTEIROS = {
   desconto:        { t: "Desconto autorizado", d: `Descrição\nMonitor que autorizou:\n\nADM: \nValor do desconto: \nTempo do desconto: \nTotal do desconto: \nMotivo:\n\nCaso:\nCPF:` },
 };
 
-window.aplicarScript = function (tipo) {
+window.aplicarRoteiroDinamico = function (id) {
   const titulo = document.getElementById("caso-titulo");
   const desc = document.getElementById("caso-descricao");
-  const r = ROTEIROS[tipo];
+  const r = localDB.roteiros_rapidos.find(x => x.id === id);
   if (!titulo || !desc || !r) return;
-  titulo.value = r.t;
-  desc.value = r.d;
+  titulo.value = r.titulo;
+  desc.value = r.texto;
   autoResizeTextarea(desc);
   window.lancarToast("Roteiro rápido inserido no formulário.", "info");
 };
+
+function renderizarRoteirosOperador() {
+  const cont = document.getElementById("grid-roteiros-operador");
+  if (!cont) return;
+  if (localDB.roteiros_rapidos.length === 0) {
+    cont.innerHTML = "";
+    return;
+  }
+  cont.innerHTML = localDB.roteiros_rapidos.map(r =>
+    `<button class="btn-shortcut" onclick="aplicarRoteiroDinamico('${escapeHtml(r.id)}')">${escapeHtml(r.titulo)}</button>`
+  ).join("");
+}
+
+// --------------------------------------------------------------------------
+// GERENCIAMENTO DOS ROTEIROS (MONITOR)
+// --------------------------------------------------------------------------
+let roteiroEditandoId = null;
+
+window.abrirModalRoteiros = function () {
+  if (!monitorSessao) return;
+  renderizarRoteirosMonitor();
+  document.getElementById("modal-roteiros")?.classList.add("open");
+};
+
+window.fecharModalRoteiros = function () {
+  document.getElementById("modal-roteiros")?.classList.remove("open");
+  window.cancelarEdicaoRoteiroMock();
+};
+
+window.salvarRoteiroMonitorMock = function () {
+  if (!monitorSessao) return;
+  const tituloEl = document.getElementById("roteiro-titulo-input");
+  const textoEl = document.getElementById("roteiro-texto-input");
+  const titulo = tituloEl?.value.trim();
+  const texto = textoEl?.value.trim();
+  if (!titulo || !texto) { window.lancarToast("Preencha o título e o texto do roteiro.", "danger"); return; }
+
+  if (roteiroEditandoId) {
+    const existente = localDB.roteiros_rapidos.find(r => r.id === roteiroEditandoId);
+    window.salvarItem("roteiros_rapidos", { ...existente, titulo, texto });
+    window.lancarToast("Roteiro atualizado.", "success");
+  } else {
+    const novo = {
+      id: "rt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      titulo, texto,
+      timestamp: Date.now(),
+      criadoPor: monitorSessao.nome,
+    };
+    window.salvarItem("roteiros_rapidos", novo);
+    window.lancarToast("Roteiro adicionado.", "success");
+  }
+  window.cancelarEdicaoRoteiroMock();
+};
+
+window.editarRoteiroMonitorMock = function (id) {
+  const r = localDB.roteiros_rapidos.find(x => x.id === id);
+  if (!r) return;
+  roteiroEditandoId = id;
+  document.getElementById("roteiro-titulo-input").value = r.titulo;
+  document.getElementById("roteiro-texto-input").value = r.texto;
+  document.getElementById("btn-salvar-roteiro").innerHTML = '<i class="fa-solid fa-check"></i> Salvar alteração';
+  document.getElementById("btn-cancelar-edicao-roteiro").style.display = "inline-flex";
+  document.getElementById("roteiro-titulo-input").scrollIntoView({ behavior: "smooth", block: "center" });
+};
+
+window.cancelarEdicaoRoteiroMock = function () {
+  roteiroEditandoId = null;
+  document.getElementById("roteiro-titulo-input").value = "";
+  document.getElementById("roteiro-texto-input").value = "";
+  document.getElementById("btn-salvar-roteiro").innerHTML = '<i class="fa-solid fa-plus"></i> Adicionar roteiro';
+  document.getElementById("btn-cancelar-edicao-roteiro").style.display = "none";
+};
+
+window.excluirRoteiroMonitorMock = function (id) {
+  if (!confirm("Excluir este roteiro? Ele deixa de aparecer para os operadores imediatamente.")) return;
+  window.removerItem("roteiros_rapidos", id);
+  if (roteiroEditandoId === id) window.cancelarEdicaoRoteiroMock();
+  window.lancarToast("Roteiro removido.", "info");
+};
+
+function renderizarRoteirosMonitor() {
+  const cont = document.getElementById("lista-roteiros-monitor");
+  const contador = document.getElementById("count-roteiros");
+  if (!cont) return;
+  if (contador) contador.innerText = localDB.roteiros_rapidos.length;
+  if (localDB.roteiros_rapidos.length === 0) {
+    cont.innerHTML = `<div style="color:var(--text-muted); padding:10px; text-align:center; font-style:italic;">Nenhum roteiro cadastrado ainda.</div>`;
+    return;
+  }
+  cont.innerHTML = localDB.roteiros_rapidos.map(r => `
+    <div class="notif-history-item">
+      <div>
+        <strong>${escapeHtml(r.titulo)}</strong>
+        <div style="white-space:pre-wrap; color:var(--text-muted); font-size:0.82rem; margin-top:4px;">${escapeHtml(r.texto)}</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <button onclick="editarRoteiroMonitorMock('${escapeHtml(r.id)}')"><i class="fa-solid fa-pen"></i> Editar</button>
+        <button onclick="excluirRoteiroMonitorMock('${escapeHtml(r.id)}')"><i class="fa-solid fa-trash"></i> Excluir</button>
+      </div>
+    </div>`).join("");
+}
 
 // --------------------------------------------------------------------------
 // MULTI-SESSÃO DO MONITOR + HEARTBEAT
@@ -1383,6 +1505,9 @@ window.renderizarTudo = function () {
   // 3. Chamado do RH (modal obrigatório, se houver algo pendente pra minha PA)
   window.verificarAvisosRHPendentes();
 
+  // 3a. Roteiros rápidos (operador)
+  if (operadorSessao) renderizarRoteirosOperador();
+
   // 3b. Alerta presencial / botão
   const boxAlertaOp = document.getElementById("alerta-suporte-operador");
   const btnChamarMon = document.getElementById("btn-chamar-monitor");
@@ -1484,6 +1609,7 @@ window.renderizarTudo = function () {
   }
 
   // 6. Fila / arquivo (monitor)
+  if (monitorSessao) renderizarRoteirosMonitor();
   const listaFila = document.getElementById("lista-casos-monitor");
   const listaArq = document.getElementById("lista-casos-concluidos-monitor");
   const countArq = document.getElementById("count-arquivados");
@@ -1813,6 +1939,9 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("modal-editar-caso")?.addEventListener("click", (e) => {
     if (e.target.id === "modal-editar-caso") window.fecharModalEdicaoCaso();
+  });
+  document.getElementById("modal-roteiros")?.addEventListener("click", (e) => {
+    if (e.target.id === "modal-roteiros") window.fecharModalRoteiros();
   });
 
   if (operadorSessao) {
