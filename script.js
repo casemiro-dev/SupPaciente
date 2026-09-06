@@ -1237,6 +1237,7 @@ window.trocarAbaAdmin = function (aba) {
   document.querySelectorAll(".admin-tab-content").forEach(c => c.classList.remove("active"));
   document.getElementById(`admin-aba-${aba}`)?.classList.add("active");
   window.renderizarTudo();
+  if (aba === "manutencao") atualizarPreviewLimpeza();
 };
 
 window.forcarLogoutMonitorAdmin = function (monitorId, monitorNome) {
@@ -1276,14 +1277,39 @@ window.removerNotificacaoAdmin = function (id) {
 // --------------------------------------------------------------------------
 function inicioDoDiaTs() { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); }
 
-function filtrarCasosPorPeriodo(periodo, base = listaCasos()) {
+function calcularLimiteTimestamp(periodo) {
   const agora = Date.now();
-  let limite = 0;
-  if (periodo === "hoje")   limite = inicioDoDiaTs();
-  if (periodo === "semana") limite = agora - 7  * 24 * 60 * 60 * 1000;
-  if (periodo === "mes")    limite = agora - 30 * 24 * 60 * 60 * 1000;
-  if (periodo === "tudo")   limite = 0;
+  if (periodo === "hoje")   return inicioDoDiaTs();
+  if (periodo === "semana") return agora - 7  * 24 * 60 * 60 * 1000;
+  if (periodo === "mes")    return agora - 30 * 24 * 60 * 60 * 1000;
+  return 0; // "tudo"
+}
+
+function filtrarCasosPorPeriodo(periodo, base = listaCasos()) {
+  const limite = calcularLimiteTimestamp(periodo);
   return base.filter(c => (c.timestamp || 0) >= limite);
+}
+
+// --------------------------------------------------------------------------
+// BUSCA "AVULSA" NO FIREBASE, IGNORANDO O CASOS_LIMITE (300)
+// --------------------------------------------------------------------------
+// A sincronização em tempo real (`fbLimitToLast(CASOS_LIMITE)`) só carrega os
+// 300 casos mais recentes — suficiente para o dia a dia, mas insuficiente
+// para a limpeza: se o histórico total ultrapassar 300, casos concluídos
+// mais antigos nunca aparecem no preview nem são apagados por ela, embora
+// continuem existindo (e ocupando espaço) no Firebase. Por isso, a limpeza
+// faz uma consulta única e direta ao banco, por fora do listener em tempo
+// real, só no momento em que o admin realmente pede (nunca em segundo
+// plano) — assim não pesa no uso normal do app.
+async function buscarCasosParaLimpeza(periodo) {
+  const casosRef = window.fbRef(window.fbDB, "teleflow_sandbox/casos");
+  const limite = calcularLimiteTimestamp(periodo);
+  const consulta = limite > 0
+    ? window.fbQuery(casosRef, window.fbOrderByChild("timestamp"), window.fbStartAt(limite))
+    : casosRef; // "tudo": sem filtro, precisa mesmo trazer o histórico inteiro
+  const snap = await window.fbGet(consulta);
+  const v = snap.val();
+  return v ? Object.entries(v).map(([key, val]) => ({ ...val, id: val.id || key })) : [];
 }
 
 window.exportarRelatorioJSON = function () {
@@ -1316,9 +1342,16 @@ window.exportarRelatorioJSON = function () {
   window.lancarToast(`Download iniciado: ${casos.length} casos.`, "success");
 };
 
-window.apagarConcluidosAdmin = function () {
+window.apagarConcluidosAdmin = async function () {
   const periodo = document.getElementById("limpeza-periodo")?.value || "hoje";
-  const alvos = filtrarCasosPorPeriodo(periodo).filter(c => c.status === "Concluído");
+  const btn = document.querySelector('button[onclick="apagarConcluidosAdmin()"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Consultando o banco...'; }
+
+  const todos = await buscarCasosParaLimpeza(periodo);
+  const alvos = todos.filter(c => c.status === "Concluído");
+
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-eraser"></i> Apagar concluídos do período'; }
+
   if (alvos.length === 0) {
     window.lancarToast("Nenhum caso concluído encontrado nesse período.", "warning");
     return;
@@ -1334,6 +1367,8 @@ window.apagarConcluidosAdmin = function () {
     `Apagar ${alvos.length} caso(s) ${labelPeriodo}?\n\n` +
     `Apenas casos com status "Concluído" serão removidos.\n` +
     `Pendentes e em tratativa NÃO serão tocados.\n\n` +
+    `Esta busca consulta o banco inteiro, então inclui também casos ` +
+    `concluídos antigos que não aparecem na fila do monitor.\n\n` +
     `Esta ação não pode ser desfeita.`
   );
   if (!ok) return;
@@ -1345,12 +1380,20 @@ window.apagarConcluidosAdmin = function () {
   atualizarPreviewLimpeza();
 };
 
-function atualizarPreviewLimpeza() {
+async function atualizarPreviewLimpeza() {
   const cont = document.getElementById("limpeza-preview");
   if (!cont) return;
   const periodo = document.getElementById("limpeza-periodo")?.value || "hoje";
-  const alvos = filtrarCasosPorPeriodo(periodo).filter(c => c.status === "Concluído");
-  const pendentesNoPeriodo = filtrarCasosPorPeriodo(periodo).filter(c => c.status !== "Concluído").length;
+
+  cont.innerHTML = `<div style="color:var(--text-muted); padding:10px; font-style:italic;"><i class="fa-solid fa-spinner fa-spin"></i> Consultando o banco...</div>`;
+
+  const todos = await buscarCasosParaLimpeza(periodo);
+  const alvos = todos.filter(c => c.status === "Concluído");
+  const pendentesNoPeriodo = todos.filter(c => c.status !== "Concluído").length;
+
+  // Se o admin já trocou de período enquanto essa consulta corria, descarta
+  // o resultado velho e não pisa no preview mais recente.
+  if (document.getElementById("limpeza-periodo")?.value !== periodo) return;
 
   cont.innerHTML = `
     <div class="limpeza-preview-grid">
@@ -1700,7 +1743,6 @@ window.renderizarTudo = function () {
     renderizarAdminMonitores();
     renderizarAdminNotificacoes();
     renderizarRelatorios();
-    atualizarPreviewLimpeza();
   }
 
   // 8. RH

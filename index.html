@@ -403,7 +403,7 @@
         <div class="report-controls">
           <div class="input-group" style="margin:0; flex:1; min-width:220px;">
             <label>Período a apagar</label>
-            <select id="limpeza-periodo">
+            <select id="limpeza-periodo" onchange="atualizarPreviewLimpeza()">
               <option value="hoje">Concluídos hoje</option>
               <option value="semana">Concluídos nos últimos 7 dias</option>
               <option value="mes">Concluídos nos últimos 30 dias</option>
@@ -727,7 +727,8 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
     import {
       getDatabase, ref, set, remove, onValue, onChildAdded, onChildChanged,
-      onChildRemoved, onDisconnect, update, query, orderByChild, limitToLast
+      onChildRemoved, onDisconnect, update, query, orderByChild, limitToLast,
+      get, startAt
     } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     const firebaseConfig = {
@@ -757,6 +758,8 @@
     window.fbQuery          = query;
     window.fbOrderByChild   = orderByChild;
     window.fbLimitToLast    = limitToLast;
+    window.fbGet            = get;
+    window.fbStartAt        = startAt;
 
     if (typeof window.inicializarSincronismoFirebase === "function") {
       window.inicializarSincronismoFirebase();
