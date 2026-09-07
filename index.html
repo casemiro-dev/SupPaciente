@@ -195,6 +195,26 @@
     </div>
   </div>
 
+  <!-- Modal de aviso da monitoria (operador) — obrigatório, sem botão de fechar -->
+  <div id="modal-aviso-monitor" class="modal-overlay modal-rh-urgente" role="alertdialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-bullhorn" style="color:var(--primary);"></i> Comunicado da Monitoria</h3>
+      </div>
+      <div class="modal-body">
+        <div class="modal-meta-bar">
+          <span id="aviso-monitor-autor"></span>
+          <span id="aviso-monitor-hora"></span>
+        </div>
+        <h4 id="aviso-monitor-titulo"></h4>
+        <div id="aviso-monitor-mensagem" class="modal-description-box"></div>
+        <button id="modal-btn-confirmar-aviso-monitor" class="btn-success" style="margin-top:18px;">
+          <i class="fa-solid fa-check"></i> Ciente e marcar como lido
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- =====================================================================
        TELA: LOGIN
        ===================================================================== -->
@@ -643,6 +663,9 @@
         <button onclick="abrirModalRoteiros()" class="btn-secondary" style="margin:0;">
           <i class="fa-solid fa-bolt"></i> Roteiros rápidos
         </button>
+        <button onclick="abrirModalEnviarAvisoMonitor()" class="btn-secondary" style="margin:0;">
+          <i class="fa-solid fa-bullhorn"></i> Enviar comunicado
+        </button>
         <button onclick="deslogarMonitorMock()" class="btn-back" style="margin:0;">
           <i class="fa-solid fa-right-from-bracket"></i> Desconectar
         </button>
@@ -716,6 +739,45 @@
       </div>
       <div id="container-arquivo-retratil" class="archive-body-content">
         <div id="lista-casos-concluidos-monitor" class="grid-cards-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de envio de aviso da monitoria -->
+  <div id="modal-enviar-aviso-monitor" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-bullhorn" style="color:var(--primary);"></i> Transmitir aviso para os operadores</h3>
+        <div class="modal-header-actions">
+          <button class="btn-close-modal" onclick="fecharModalEnviarAvisoMonitor()" aria-label="Fechar">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="monitor-aviso-id-edicao">
+        <div class="input-group">
+          <label for="monitor-aviso-titulo">Título do aviso</label>
+          <input type="text" id="monitor-aviso-titulo" placeholder="Ex: Mudança na fila / Treinamento às 15h">
+        </div>
+        <div class="input-group">
+          <label for="monitor-aviso-mensagem">Mensagem do comunicado</label>
+          <textarea id="monitor-aviso-mensagem" placeholder="Digite aqui a mensagem detalhada..."></textarea>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button id="btn-enviar-aviso-monitor" onclick="enviarAvisoMonitorMock()" class="btn-success" style="flex:1; width:auto; margin:0;">
+          <i class="fa-solid fa-paper-plane"></i> Transmitir para todos
+          </button>
+          <button id="btn-cancelar-edicao-aviso-mon" onclick="cancelarEdicaoAvisoMonitor()" class="btn-secondary" style="display:none; flex:1; width:auto; margin:0;">
+            <i class="fa-solid fa-xmark"></i> Cancelar edição
+          </button>
+        </div>
+
+        <h3 style="margin-top:24px; font-size:1rem;"><i class="fa-solid fa-clock-rotate-left"></i> Comunicados ativos (<span id="count-avisos-monitor">0</span>)</h3>
+        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px;">
+          Os comunicados ficam visíveis para a equipe de operadores até serem removidos aqui.
+        </p>
+        <div id="lista-avisos-monitor-historico" class="notif-history"></div>
       </div>
     </div>
   </div>

@@ -91,12 +91,13 @@ const RH_PASSWORD          = "rh2026"; // TODO: trocar pela senha real do setor 
 const HEARTBEAT_INTERVALO  = 25_000;
 const HEARTBEAT_EXPIRACAO  = 75_000;
 const CHAVE_NOTIF_LIDAS    = "teleflow_notif_dismissed";
+const CHAVE_AVISOS_MONITOR_LIDOS = "teleflow_avisos_mon_lidos";
 const CASOS_LIMITE         = 300; // máximo de casos baixados (mais recentes)
 
 // --------------------------------------------------------------------------
 // ESTADO
 // --------------------------------------------------------------------------
-const localDB = { casos: {}, alertas_pa: [], monitores_online: [], notificacoes: [], avisos_rh: [], operadores_online: [], roteiros_rapidos: [] };
+const localDB = { casos: {}, alertas_pa: [], monitores_online: [], notificacoes: [], avisos_rh: [], avisos_monitor: [], operadores_online: [], roteiros_rapidos: [] };
 const controleTamanhoAntigo = { alertas: 0, notif: 0 };
 let arquivoAberto = false;
 let idCasoModalAberto = null;
@@ -105,6 +106,8 @@ let heartbeatTimer = null;
 // Fila de chamados do RH ainda não exibidos/confirmados pelo operador nesta aba.
 const avisosRHJaNotificados = new Set();
 let avisoRHModalAtualId = null;
+let avisoMonitorModalAtualId = null;
+let avisoMonitorEditandoId = null;
 let operadorSelecionadoRHPa = null; // PA escolhida via clique no card (não digitação)
 
 // Proteção: só permite escrita após o primeiro snapshot de cada coleção crítica.
@@ -229,6 +232,17 @@ window.inicializarSincronismoFirebase = function () {
     // A checagem de "preciso abrir o modal automaticamente?" roda sempre
     // que essa coleção muda, independente do debounce do render geral.
     window.verificarAvisosRHPendentes();
+  });
+
+  window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/avisos_monitor"), (snap) => {
+    const v = snap.val();
+    localDB.avisos_monitor = v ? Object.values(v) : [];
+    localDB.avisos_monitor.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    agendarRender();
+    if (document.getElementById("modal-enviar-aviso-monitor")?.classList.contains("open")) {
+      window.renderizarHistoricoAvisosMonitor();
+    }
+    window.verificarAvisosMonitorPendentes();
   });
 
   window.fbOnValue(window.fbRef(window.fbDB, "teleflow_sandbox/notificacoes"), (snap) => {
@@ -473,6 +487,159 @@ window.criarAvisoRHMock = function () {
 window.cancelarAvisoRHMock = function (id) {
   window.removerItem("avisos_rh", id);
   window.lancarToast("Chamado removido.", "info");
+};
+
+window.abrirModalEnviarAvisoMonitor = function () {
+  window.renderizarHistoricoAvisosMonitor();
+  document.getElementById("modal-enviar-aviso-monitor")?.classList.add("open");
+};
+
+window.fecharModalEnviarAvisoMonitor = function () {
+  document.getElementById("modal-enviar-aviso-monitor")?.classList.remove("open");
+  window.cancelarEdicaoAvisoMonitor();
+};
+
+window.renderizarHistoricoAvisosMonitor = function () {
+  const cont = document.getElementById("lista-avisos-monitor-historico");
+  const contador = document.getElementById("count-avisos-monitor");
+  if (!cont) return;
+  if (contador) contador.innerText = localDB.avisos_monitor.length;
+  if (localDB.avisos_monitor.length === 0) {
+    cont.innerHTML = `<div style="color:var(--text-muted); padding:10px; text-align:center; font-style:italic;">Nenhum comunicado enviado ainda.</div>`;
+    return;
+  }
+  cont.innerHTML = localDB.avisos_monitor.map(a => `
+    <div class="notif-history-item">
+      <div>
+        <strong>${escapeHtml(a.titulo || "Comunicado")}</strong>
+        <div style="white-space:pre-wrap; color:var(--text-muted); font-size:0.82rem; margin-top:4px;">${nl2br(a.mensagem || "")}</div>
+        <div class="nh-time">
+          Enviado por ${escapeHtml(a.criadoPor || "Monitoria")} · ${new Date(a.timestamp).toLocaleString("pt-BR")}
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <button class="btn-secondary" onclick="editarAvisoMonitorMock('${escapeHtml(a.id)}')">
+          <i class="fa-solid fa-pen"></i> Editar
+        </button>
+        <button class="btn-danger" onclick="excluirAvisoMonitorMock('${escapeHtml(a.id)}')">
+          <i class="fa-solid fa-trash"></i> Excluir
+        </button>
+      </div>
+    </div>`).join("");
+};
+
+window.cancelarEdicaoAvisoMonitor = function () {
+  const titulo = document.getElementById("monitor-aviso-titulo");
+  const mensagem = document.getElementById("monitor-aviso-mensagem");
+  const idEdicao = document.getElementById("monitor-aviso-id-edicao");
+  const botaoEnviar = document.getElementById("btn-enviar-aviso-monitor");
+  const botaoCancelar = document.getElementById("btn-cancelar-edicao-aviso-mon");
+  if (titulo) titulo.value = "";
+  if (mensagem) mensagem.value = "";
+  if (idEdicao) idEdicao.value = "";
+  if (botaoEnviar) botaoEnviar.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Transmitir para todos';
+  if (botaoCancelar) botaoCancelar.style.display = "none";
+  avisoMonitorEditandoId = null;
+};
+
+window.editarAvisoMonitorMock = function (id) {
+  const aviso = localDB.avisos_monitor.find(a => a.id === id);
+  if (!aviso) return;
+  avisoMonitorEditandoId = id;
+  document.getElementById("monitor-aviso-titulo").value = aviso.titulo || "";
+  document.getElementById("monitor-aviso-mensagem").value = aviso.mensagem || "";
+  document.getElementById("monitor-aviso-id-edicao").value = id;
+  document.getElementById("btn-enviar-aviso-monitor").innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Salvar alterações';
+  document.getElementById("btn-cancelar-edicao-aviso-mon").style.display = "inline-flex";
+};
+
+window.excluirAvisoMonitorMock = function (id) {
+  if (!confirm("Deseja realmente remover este comunicado?")) return;
+  localDB.avisos_monitor = localDB.avisos_monitor.filter(a => a.id !== id);
+  window.removerItem("avisos_monitor", id);
+  if (avisoMonitorEditandoId === id || document.getElementById("monitor-aviso-id-edicao")?.value === id) {
+    window.cancelarEdicaoAvisoMonitor();
+  }
+  window.lancarToast("Comunicado removido.", "info");
+  window.renderizarHistoricoAvisosMonitor();
+};
+
+window.enviarAvisoMonitorMock = function () {
+  if (!monitorSessao) return;
+  const titulo = document.getElementById("monitor-aviso-titulo")?.value.trim();
+  const mensagem = document.getElementById("monitor-aviso-mensagem")?.value.trim();
+  const idEdicao = document.getElementById("monitor-aviso-id-edicao")?.value || avisoMonitorEditandoId;
+  if (!titulo || !mensagem) {
+    window.lancarToast("Preencha o título e a mensagem do comunicado.", "danger");
+    return;
+  }
+
+  if (idEdicao) {
+    const aviso = localDB.avisos_monitor.find(a => a.id === idEdicao);
+    if (!aviso) {
+      window.lancarToast("Comunicado não encontrado.", "warning");
+      window.cancelarEdicaoAvisoMonitor();
+      return;
+    }
+    const avisoAtualizado = { ...aviso, titulo, mensagem };
+    Object.assign(aviso, avisoAtualizado);
+    window.salvarItem("avisos_monitor", avisoAtualizado);
+    window.lancarToast("Comunicado atualizado com sucesso.", "success");
+  } else {
+    const aviso = {
+      id: "aviso_mon_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      titulo,
+      mensagem,
+      criadoPor: monitorSessao.nome,
+      timestamp: Date.now(),
+    };
+    localDB.avisos_monitor.push(aviso);
+    window.salvarItem("avisos_monitor", aviso);
+    window.lancarToast("Aviso transmitido aos operadores.", "success");
+  }
+  window.cancelarEdicaoAvisoMonitor();
+  window.renderizarHistoricoAvisosMonitor();
+};
+
+window.verificarAvisosMonitorPendentes = function () {
+  if (!operadorSessao) return;
+  const modal = document.getElementById("modal-aviso-monitor");
+  if (!modal) return;
+  const lidos = JSON.parse(localStorage.getItem(CHAVE_AVISOS_MONITOR_LIDOS) || "[]");
+  const pendentes = localDB.avisos_monitor
+    .filter(a => !lidos.includes(a.id))
+    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+  if (pendentes.length === 0) {
+    modal.classList.remove("open");
+    avisoMonitorModalAtualId = null;
+    return;
+  }
+
+  const proximo = pendentes[0];
+  if (avisoMonitorModalAtualId === proximo.id && modal.classList.contains("open")) return;
+  avisoMonitorModalAtualId = proximo.id;
+  document.getElementById("aviso-monitor-autor").innerHTML =
+    `<i class="fa-solid fa-user-shield"></i> Monitor: <strong>${escapeHtml(proximo.criadoPor || "Monitoria")}</strong>`;
+  document.getElementById("aviso-monitor-hora").innerHTML =
+    `<i class="fa-regular fa-clock"></i> ${new Date(proximo.timestamp).toLocaleString("pt-BR")}`;
+  document.getElementById("aviso-monitor-titulo").innerText = proximo.titulo || "Comunicado";
+  document.getElementById("aviso-monitor-mensagem").innerHTML = nl2br(proximo.mensagem || "");
+  document.getElementById("modal-btn-confirmar-aviso-monitor").onclick = function () {
+    window.confirmarAvisoMonitor(proximo.id);
+  };
+  modal.classList.add("open");
+};
+
+window.confirmarAvisoMonitor = function (id) {
+  const lidos = JSON.parse(localStorage.getItem(CHAVE_AVISOS_MONITOR_LIDOS) || "[]");
+  if (!lidos.includes(id)) lidos.push(id);
+  localStorage.setItem(CHAVE_AVISOS_MONITOR_LIDOS, JSON.stringify(lidos));
+  document.getElementById("modal-aviso-monitor")?.classList.remove("open");
+  avisoMonitorModalAtualId = null;
+  window.lancarToast("Comunicado marcado como lido.", "success");
+  window.verificarAvisosMonitorPendentes();
+  window.renderizarSino();
 };
 
 window.lancarNotificacaoVisualMonitor = function (texto) {
@@ -965,6 +1132,11 @@ window.dispensarComunicado = function (id) {
   window.renderizarModalNotificacoes();
 };
 
+window.dispensarAvisoMonitor = function (id) {
+  window.confirmarAvisoMonitor(id);
+  window.fecharModalNotificacoes();
+};
+
 // --------------------------------------------------------------------------
 // SINO DE NOTIFICAÇÕES (OPERADOR)
 // --------------------------------------------------------------------------
@@ -972,9 +1144,20 @@ let notifExpandidaId = null;
 
 function notificacoesAtivasParaOperador() {
   const lidas = JSON.parse(localStorage.getItem(CHAVE_NOTIF_LIDAS) || "[]");
-  return [...localDB.notificacoes]
+  const lidasMonitor = JSON.parse(localStorage.getItem(CHAVE_AVISOS_MONITOR_LIDOS) || "[]");
+  const notificacoes = [...localDB.notificacoes]
     .filter(n => !lidas.includes(n.id))
-    .sort((a, b) => b.timestamp - a.timestamp);
+    .map(n => ({ ...n, lido: false }));
+  const avisosMonitor = localDB.avisos_monitor.map(a => ({
+    ...a,
+    id: "monitor_" + a.id,
+    origemId: a.id,
+    titulo: `Monitoria: ${a.titulo || "Comunicado"}`,
+    tipo: "info",
+    lido: lidasMonitor.includes(a.id),
+    monitoria: true,
+  }));
+  return [...notificacoes, ...avisosMonitor].sort((a, b) => b.timestamp - a.timestamp);
 }
 
 window.renderizarSino = function () {
@@ -982,9 +1165,10 @@ window.renderizarSino = function () {
   const ativas = notificacoesAtivasParaOperador();
   const badge = document.getElementById("bell-badge");
   if (!badge) return;
-  if (ativas.length > 0) {
+  const naoLidas = ativas.filter(n => !n.lido);
+  if (naoLidas.length > 0) {
     badge.style.display = "flex";
-    badge.innerText = ativas.length > 99 ? "99+" : String(ativas.length);
+    badge.innerText = naoLidas.length > 99 ? "99+" : String(naoLidas.length);
   } else {
     badge.style.display = "none";
   }
@@ -1021,16 +1205,18 @@ window.renderizarModalNotificacoes = function () {
     const expandida = notifExpandidaId === n.id;
     const tipo = (n.tipo || "info").replace(/[^a-z]/gi, "");
     const titulo = n.titulo || "Comunicado";
+    const statusLeitura = n.lido ? "Lido" : "Não lido";
+    const idDispensa = n.monitoria ? `dispensarAvisoMonitor('${escapeHtml(n.origemId)}')` : `dispensarComunicado('${escapeHtml(n.id)}')`;
     return `
       <div class="notif-item ${tipo} ${expandida ? 'expandida' : ''}" onclick="expandirNotificacao('${escapeHtml(n.id)}')">
         <div class="notif-item-header">
           <div class="notif-item-title">
             <span class="notif-pill notif-pill-${tipo}">${tipo.toUpperCase()}</span>
-            <strong>${escapeHtml(titulo)}</strong>
+            <strong>${escapeHtml(titulo)} <small>(${statusLeitura})</small></strong>
           </div>
           <div class="notif-item-meta">
             <span class="notif-time">${new Date(n.timestamp).toLocaleString("pt-BR")}</span>
-            <button class="notif-dismiss" onclick="event.stopPropagation(); dispensarComunicado('${escapeHtml(n.id)}')" title="Marcar como lido para mim">
+            <button class="notif-dismiss" onclick="event.stopPropagation(); ${idDispensa}" title="Marcar como lido para mim">
               <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
@@ -1547,6 +1733,7 @@ window.renderizarTudo = function () {
 
   // 3. Chamado do RH (modal obrigatório, se houver algo pendente pra minha PA)
   window.verificarAvisosRHPendentes();
+  window.verificarAvisosMonitorPendentes();
 
   // 3a. Roteiros rápidos (operador)
   if (operadorSessao) renderizarRoteirosOperador();
@@ -1984,6 +2171,9 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("modal-roteiros")?.addEventListener("click", (e) => {
     if (e.target.id === "modal-roteiros") window.fecharModalRoteiros();
+  });
+  document.getElementById("modal-enviar-aviso-monitor")?.addEventListener("click", (e) => {
+    if (e.target.id === "modal-enviar-aviso-monitor") window.fecharModalEnviarAvisoMonitor();
   });
 
   if (operadorSessao) {
