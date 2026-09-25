@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐶 Gerador de Ofertas</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    :root {
+        --azul: #1769aa;
+        --azul-escuro: #0d47a1;
+        --azul-claro: #eaf4ff;
+        --vermelho: #e53935;
+        --vermelho-escuro: #c62828;
+        --branco: #ffffff;
+        --cinza: #607080;
+    }
+
+    body {
+        font-family: Arial, Helvetica, sans-serif;
+        min-height: 100vh;
+        background:
+            linear-gradient(rgba(232, 243, 255, .92), rgba(245, 249, 255, .95)),
+            url("");
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+        color: #263746;
+        padding: 25px;
+    }
+
+    .container {
+        width: 100%;
+        max-width: 950px;
+        margin: auto;
+        background: rgba(255,255,255,.97);
+        border-radius: 24px;
+        box-shadow: 0 15px 45px rgba(13,71,161,.18);
+        overflow: hidden;
+    }
+
+    .topo {
+        background: linear-gradient(135deg, var(--azul-escuro), var(--azul));
+        color: white;
+        padding: 30px;
+        text-align: center;
+        position: relative;
+    }
+
+    .topo::after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 5px;
+        background: var(--vermelho);
+    }
+
+    .cachorro {
+        font-size: 42px;
+        margin-bottom: 5px;
+    }
+
+    h1 {
+        font-size: 30px;
+        margin-bottom: 7px;
+    }
+
+    .subtitulo {
+        opacity: .9;
+        font-size: 15px;
+    }
+
+    .conteudo {
+        padding: 28px;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 22px;
+    }
+
+    .card {
+        background: var(--azul-claro);
+        border: 1px solid #cfe3f8;
+        border-radius: 18px;
+        padding: 22px;
+    }
+
+    label {
+        display: block;
+        color: var(--azul-escuro);
+        font-weight: bold;
+        margin-bottom: 9px;
+    }
+
+    .campo-valor {
+        position: relative;
+    }
+
+    .simbolo {
+        position: absolute;
+        left: 14px;
+        top: 14px;
+        color: #667788;
+        font-weight: bold;
+    }
+
+    input[type="text"] {
+        width: 100%;
+        padding: 14px 14px 14px 42px;
+        border: 2px solid #c9ddef;
+        border-radius: 12px;
+        font-size: 17px;
+        outline: none;
+        background: white;
+    }
+
+    input[type="text"]:focus {
+        border-color: var(--azul);
+        box-shadow: 0 0 0 3px rgba(23,105,170,.10);
+    }
+
+    .titulo-desconto {
+        margin-top: 22px;
+        margin-bottom: 10px;
+    }
+
+    .descontos {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+    }
+
+    .desconto {
+        border: 2px solid #c9ddef;
+        background: white;
+        color: var(--azul-escuro);
+        border-radius: 12px;
+        padding: 13px 7px;
+        font-weight: bold;
+        font-size: 15px;
+        cursor: pointer;
+        transition: .2s;
+    }
+
+    .desconto:hover {
+        border-color: var(--azul);
+        transform: translateY(-2px);
+    }
+
+    .desconto.ativo {
+        background: var(--vermelho);
+        border-color: var(--vermelho);
+        color: white;
+    }
+
+    .resultado {
+        background: white;
+        border-radius: 16px;
+        padding: 20px;
+        margin-top: 20px;
+        text-align: center;
+        border-left: 5px solid var(--vermelho);
+    }
+
+    .resultado-titulo {
+        color: var(--cinza);
+        font-size: 14px;
+    }
+
+    .valor-final {
+        color: var(--azul-escuro);
+        font-size: 38px;
+        font-weight: bold;
+        margin: 8px 0;
+    }
+
+    .economia {
+        color: #2e7d32;
+        font-weight: bold;
+    }
+
+    .script-titulo {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+
+    .status {
+        font-size: 12px;
+        color: var(--cinza);
+    }
+
+    textarea {
+        width: 100%;
+        min-height: 280px;
+        resize: vertical;
+        padding: 16px;
+        border: 2px solid #c9ddef;
+        border-radius: 13px;
+        background: white;
+        color: #263746;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 15px;
+        line-height: 1.55;
+        outline: none;
+    }
+
+    textarea:focus {
+        border-color: var(--azul);
+    }
+
+    .botoes {
+        display: flex;
+        gap: 10px;
+        margin-top: 12px;
+    }
+
+    .btn {
+        flex: 1;
+        padding: 14px;
+        border: none;
+        border-radius: 12px;
+        font-weight: bold;
+        font-size: 15px;
+        cursor: pointer;
+        transition: .2s;
+    }
+
+    .btn-copiar {
+        background: var(--azul);
+        color: white;
+    }
+
+    .btn-copiar:hover {
+        background: var(--azul-escuro);
+    }
+
+    .btn-limpar {
+        background: #e9eef3;
+        color: #465766;
+    }
+
+    .btn-limpar:hover {
+        background: #dce4eb;
+    }
+
+    .fundo {
+        margin-top: 22px;
+    }
+
+    input[type="file"] {
+        width: 100%;
+        padding: 12px;
+        border: 2px dashed #b9d2e8;
+        border-radius: 12px;
+        background: white;
+        cursor: pointer;
+    }
+
+    .rodape {
+        text-align: center;
+        color: #738494;
+        font-size: 13px;
+        margin-top: 20px;
+    }
+
+    .mensagem-sucesso {
+        position: fixed;
+        bottom: 25px;
+        right: 25px;
+        background: #2e7d32;
+        color: white;
+        padding: 14px 20px;
+        border-radius: 12px;
+        box-shadow: 0 8px 25px rgba(0,0,0,.18);
+        opacity: 0;
+        transform: translateY(20px);
+        pointer-events: none;
+        transition: .3s;
+        font-weight: bold;
+    }
+
+    .mensagem-sucesso.mostrar {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    @media (max-width: 750px) {
+        body {
+            padding: 12px;
+        }
+
+        .grid {
+            grid-template-columns: 1fr;
+        }
+
+        .conteudo {
+            padding: 18px;
+        }
+
+        .topo {
+            padding: 25px 18px;
+        }
+
+        .descontos {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .valor-final {
+            font-size: 32px;
+        }
+    }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <header class="topo">
+        <div class="cachorro">🐶</div>
+        <h1>Gerador de Ofertas</h1>
+        <div class="subtitulo">
+            Calcule o novo valor e gere sua mensagem automaticamente
+        </div>
+    </header>
+
+    <main class="conteudo">
+
+        <div class="grid">
+
+            <!-- ÁREA DO CÁLCULO -->
+            <section class="card">
+
+                <label for="valor">
+                    Valor atual da fatura
+                </label>
+
+                <div class="campo-valor">
+                    <span class="simbolo">R$</span>
+                    <input
+                        type="text"
+                        id="valor"
+                        placeholder="0,00"
+                        oninput="calcular()"
+                    >
+                </div>
+
+                <label class="titulo-desconto">
+                    Escolha o valor a reduzir
+                </label>
+
+                <div class="descontos">
+
+                    <button class="desconto"
+                            onclick="selecionarDesconto(5, this)">
+                        R$ 5
+                    </button>
+
+                    <button class="desconto"
+                            onclick="selecionarDesconto(10, this)">
+                        R$ 10
+                    </button>
+
+                    <button class="desconto"
+                            onclick="selecionarDesconto(15, this)">
+                        R$ 15
+                    </button>
+
+                    <button class="desconto"
+                            onclick="selecionarDesconto(20, this)">
+                        R$ 20
+                    </button>
+
+                    <button class="desconto"
+                            onclick="selecionarDesconto(25, this)">
+                        R$ 25
+                    </button>
+
+                    <button class="desconto"
+                            onclick="selecionarDesconto(30, this)">
+                        R$ 30
+                    </button>
+
+                </div>
+
+                <div class="resultado">
+
+                    <div class="resultado-titulo">
+                        Valor final da fatura
+                    </div>
+
+                    <div class="valor-final" id="valorFinal">
+                        R$ 0,00
+                    </div>
+
+                    <div class="economia" id="economia">
+                        Redução: R$ 0,00
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- ÁREA DO SCRIPT -->
+            <section class="card">
+
+                <div class="script-titulo">
+                    <label style="margin:0;">
+                        Mensagem gerada
+                    </label>
+
+                    <span class="status" id="status">
+                        Aguardando valor
+                    </span>
+                </div>
+
+                <textarea
+                    id="script"
+                    readonly
+                    placeholder="A mensagem da oferta aparecerá aqui..."
+                ></textarea>
+
+                <div class="botoes">
+
+                    <button
+                        class="btn btn-copiar"
+                        onclick="copiarScript()">
+                        📋 Copiar mensagem
+                    </button>
+
+                    <button
+                        class="btn btn-limpar"
+                        onclick="limparTudo()">
+                        Limpar
+                    </button>
+
+                </div>
+
+            </section>
+
+        </div>
+
+
+        <!-- IMAGEM DE FUNDO -->
+        <section class="card fundo">
+
+            <label for="imagem">
+                🖼️ Personalizar imagem de fundo
+            </label>
+
+            <input
+                type="file"
+                id="imagem"
+                accept="image/*"
+                onchange="alterarFundo(event)"
+            >
+
+        </section>
+
+        <div class="rodape">
+            🐶 Gerador de ofertas • Descontos calculados em reais
+        </div>
+
+    </main>
+
+</div>
+
+<div class="mensagem-sucesso" id="sucesso">
+    ✓ Mensagem copiada!
+</div>
+
+
+<script>
+
+let descontoSelecionado = 0;
+
+
+/* =========================
+   FORMATAÇÃO
+========================= */
+
+function moeda(valor) {
+
+    return valor.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL"
+    });
+
+}
+
+
+/* =========================
+   CONVERSÃO DO VALOR
+========================= */
+
+function converterValor(texto) {
+
+    texto = texto
+        .replace(/R\$/gi, "")
+        .replace(/\s/g, "");
+
+    if (texto.includes(",")) {
+        texto = texto.replace(/\./g, "");
+        texto = texto.replace(",", ".");
+    }
+
+    const numero = parseFloat(texto);
+
+    return isNaN(numero) ? 0 : numero;
+
+}
+
+
+/* =========================
+   ESCOLHER DESCONTO
+========================= */
+
+function selecionarDesconto(valor, botao) {
+
+    descontoSelecionado = valor;
+
+    document
+        .querySelectorAll(".desconto")
+        .forEach(btn => {
+            btn.classList.remove("ativo");
+        });
+
+    botao.classList.add("ativo");
+
+    calcular();
+
+}
+
+
+/* =========================
+   CALCULAR
+========================= */
+
+function calcular() {
+
+    const campo = document.getElementById("valor");
+
+    const valor = converterValor(campo.value);
+
+    let valorFinal = valor - descontoSelecionado;
+
+    if (valorFinal < 0) {
+        valorFinal = 0;
+    }
+
+    document.getElementById("valorFinal").textContent =
+        moeda(valorFinal);
+
+    document.getElementById("economia").textContent =
+        "Redução: " + moeda(descontoSelecionado);
+
+    gerarScript(valor, valorFinal);
+
+}
+
+
+/* =========================
+   GERAR SCRIPT
+========================= */
+
+function gerarScript(valor, valorFinal) {
+
+    const script = document.getElementById("script");
+    const status = document.getElementById("status");
+
+    if (valor <= 0) {
+
+        script.value = "";
+
+        status.textContent = "Aguardando valor";
+
+        return;
+    }
+
+
+    const valorFormatado = moeda(valorFinal);
+
+    let mensagem = "";
+
+
+    /* R$ 5 */
+
+    if (descontoSelecionado === 5) {
+
+        mensagem =
+`Verifiquei uma condição especial para o você e consegui liberar uma redução no valor da sua fatura, ficando em ${valorFormatado} por 6 meses, com renovação de fidelidade. É uma oportunidade de continuar conosco pagando menos; posso aplicar essa condição para o você?`;
+
+    }
+
+
+    /* R$ 10 */
+
+    else if (descontoSelecionado === 10) {
+
+        mensagem =
+`Consegui verificar uma condição ainda melhor para o você. Foi liberado o valor de ${valorFormatado} por 6 meses, com renovação de fidelidade, garantindo uma economia na sua fatura durante esse período. Posso deixar essa condição ativa para o você?`;
+
+    }
+
+
+    /* R$ 15 */
+
+    else if (descontoSelecionado === 15) {
+
+        mensagem =
+`Fiz uma nova verificação para tentar melhorar sua condição e consegui uma oferta especial: sua fatura pode ficar em ${valorFormatado} por 6 meses, com renovação de fidelidade. Assim, o você consegue reduzir seu custo mensal e continuar aproveitando o serviço. Podemos fechar dessa forma?`;
+
+    }
+
+
+    /* R$ 20 */
+
+    else if (descontoSelecionado === 20) {
+
+        mensagem =
+`Consegui uma condição diferenciada para o você após verificar as possibilidades disponíveis. Sua fatura pode ficar em ${valorFormatado} por 6 meses, com renovação de fidelidade. É uma oportunidade de reduzir bastante o valor mensal sem precisar cancelar o serviço. O você gostaria que eu aplicasse essa condição?`;
+
+    }
+
+
+    /* R$ 25 */
+
+    else if (descontoSelecionado === 25) {
+
+        mensagem =
+`Para tentar resolver da melhor forma possível, verifiquei uma condição especial com a supervisão e consegui liberar sua fatura por ${valorFormatado} durante 6 meses, com renovação de fidelidade. Dessa forma, o você consegue uma redução importante no valor e mantém seu serviço conosco. Podemos aproveitar essa condição?`;
+
+    }
+
+
+    /* R$ 30 */
+
+    else if (descontoSelecionado === 30) {
+
+        mensagem =
+`Fiz o possível para encontrar a melhor condição disponível e consegui uma oferta especial para sua permanência conosco: ${valorFormatado} por 6 meses, com renovação de fidelidade. É a melhor condição que consegui liberar para reduzir seu valor mensal e evitar o cancelamento. Posso aplicar essa oferta para o você?`;
+
+    }
+
+
+    else {
+
+        mensagem =
+`Selecione uma condição de oferta para gerar a mensagem.`;
+
+    }
+
+
+    script.value = mensagem;
+
+    status.textContent = "Mensagem pronta";
+
+}
+
+
+/* =========================
+   COPIAR
+========================= */
+
+async function copiarScript() {
+
+    const texto =
+        document.getElementById("script").value;
+
+    if (!texto) {
+
+        alert("Primeiro informe o valor e escolha uma condição.");
+
+        return;
+    }
+
+    try {
+
+        await navigator.clipboard.writeText(texto);
+
+        mostrarSucesso();
+
+    } catch (erro) {
+
+        const textarea =
+            document.getElementById("script");
+
+        textarea.select();
+
+        document.execCommand("copy");
+
+        mostrarSucesso();
+
+    }
+
+}
+
+
+/* =========================
+   AVISO DE COPIADO
+========================= */
+
+function mostrarSucesso() {
+
+    const aviso =
+        document.getElementById("sucesso");
+
+    aviso.classList.add("mostrar");
+
+    setTimeout(() => {
+
+        aviso.classList.remove("mostrar");
+
+    }, 2000);
+
+}
+
+
+/* =========================
+   LIMPAR
+========================= */
+
+function limparTudo() {
+
+    document.getElementById("valor").value = "";
+
+    document.getElementById("valorFinal").textContent =
+        "R$ 0,00";
+
+    document.getElementById("economia").textContent =
+        "Redução: R$ 0,00";
+
+    document.getElementById("script").value = "";
+
+    document.getElementById("status").textContent =
+        "Aguardando valor";
+
+    descontoSelecionado = 0;
+
+    document
+        .querySelectorAll(".desconto")
+        .forEach(btn => {
+            btn.classList.remove("ativo");
+        });
+
+}
+
+
+/* =========================
+   IMAGEM DE FUNDO
+========================= */
+
+function alterarFundo(event) {
+
+    const arquivo = event.target.files[0];
+
+    if (!arquivo) {
+        return;
+    }
+
+    const leitor = new FileReader();
+
+    leitor.onload = function(e) {
+
+        document.body.style.backgroundImage =
+        `linear-gradient(
+            rgba(232,243,255,.86),
+            rgba(245,249,255,.90)
+        ),
+        url("${e.target.result}")`;
+
+    };
+
+    leitor.readAsDataURL(arquivo);
+
+}
+
+</script>
+
+</body>
+</html>
