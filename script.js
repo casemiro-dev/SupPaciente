@@ -746,14 +746,39 @@ window.aplicarRoteiroDinamico = function (id) {
   window.lancarToast("Roteiro rápido inserido no formulário.", "info");
 };
 
+let categoriaRoteiroAtiva = 'todos';
+
+window.filtrarRoteirosOperador = function (categoria) {
+  categoriaRoteiroAtiva = categoria;
+
+  document.getElementById("tab-cat-todos")?.classList.toggle("active", categoria === 'todos');
+  document.getElementById("tab-cat-retencao")?.classList.toggle("active", categoria === 'retencao');
+  document.getElementById("tab-cat-sac")?.classList.toggle("active", categoria === 'sac');
+
+  renderizarRoteirosOperador();
+};
+
 function renderizarRoteirosOperador() {
   const cont = document.getElementById("grid-roteiros-operador");
   if (!cont) return;
   if (localDB.roteiros_rapidos.length === 0) {
-    cont.innerHTML = "";
+    cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum roteiro disponível.</div>`;
     return;
   }
-  cont.innerHTML = localDB.roteiros_rapidos.map(r =>
+
+  const filtrados = localDB.roteiros_rapidos.filter(r => {
+    if (categoriaRoteiroAtiva === 'todos') return true;
+    const categorias = r.categorias || [];
+    if (categorias.length === 0) return true;
+    return categorias.includes(categoriaRoteiroAtiva);
+  });
+
+  if (filtrados.length === 0) {
+    cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum atalho nesta categoria.</div>`;
+    return;
+  }
+
+  cont.innerHTML = filtrados.map(r =>
     `<button class="btn-shortcut" onclick="aplicarRoteiroDinamico('${escapeHtml(r.id)}')">${escapeHtml(r.titulo)}</button>`
   ).join("");
 }
@@ -778,18 +803,24 @@ window.salvarRoteiroMonitorMock = function () {
   if (!monitorSessao) return;
   const tituloEl = document.getElementById("roteiro-titulo-input");
   const textoEl = document.getElementById("roteiro-texto-input");
+  const catRet = document.getElementById("roteiro-cat-retencao")?.checked;
+  const catSac = document.getElementById("roteiro-cat-sac")?.checked;
   const titulo = tituloEl?.value.trim();
   const texto = textoEl?.value.trim();
   if (!titulo || !texto) { window.lancarToast("Preencha o título e o texto do roteiro.", "danger"); return; }
 
+  const categorias = [];
+  if (catRet) categorias.push('retencao');
+  if (catSac) categorias.push('sac');
+
   if (roteiroEditandoId) {
     const existente = localDB.roteiros_rapidos.find(r => r.id === roteiroEditandoId);
-    window.salvarItem("roteiros_rapidos", { ...existente, titulo, texto });
+    window.salvarItem("roteiros_rapidos", { ...existente, titulo, texto, categorias });
     window.lancarToast("Roteiro atualizado.", "success");
   } else {
     const novo = {
       id: "rt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-      titulo, texto,
+      titulo, texto, categorias,
       timestamp: Date.now(),
       criadoPor: monitorSessao.nome,
     };
@@ -803,9 +834,12 @@ window.editarRoteiroMonitorMock = function (id) {
   const r = localDB.roteiros_rapidos.find(x => x.id === id);
   if (!r) return;
   roteiroEditandoId = id;
-  document.getElementById("roteiro-titulo-input").value = r.titulo;
-  document.getElementById("roteiro-texto-input").value = r.texto;
-  document.getElementById("btn-salvar-roteiro").innerHTML = '<i class="fa-solid fa-check"></i> Salvar alteração';
+  document.getElementById("roteiro-titulo-input").value = r.titulo || "";
+  document.getElementById("roteiro-texto-input").value = r.texto || "";
+  const categorias = r.categorias || [];
+  document.getElementById("roteiro-cat-retencao").checked = categorias.includes('retencao');
+  document.getElementById("roteiro-cat-sac").checked = categorias.includes('sac');
+  document.getElementById("btn-salvar-roteiro").innerHTML = '<i class="fa-solid fa-check"></i> Salvar alterações';
   document.getElementById("btn-cancelar-edicao-roteiro").style.display = "inline-flex";
   document.getElementById("roteiro-titulo-input").scrollIntoView({ behavior: "smooth", block: "center" });
 };
@@ -814,6 +848,8 @@ window.cancelarEdicaoRoteiroMock = function () {
   roteiroEditandoId = null;
   document.getElementById("roteiro-titulo-input").value = "";
   document.getElementById("roteiro-texto-input").value = "";
+  if (document.getElementById("roteiro-cat-retencao")) document.getElementById("roteiro-cat-retencao").checked = false;
+  if (document.getElementById("roteiro-cat-sac")) document.getElementById("roteiro-cat-sac").checked = false;
   document.getElementById("btn-salvar-roteiro").innerHTML = '<i class="fa-solid fa-plus"></i> Adicionar roteiro';
   document.getElementById("btn-cancelar-edicao-roteiro").style.display = "none";
 };

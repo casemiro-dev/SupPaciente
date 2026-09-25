@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,6 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body data-theme="dark">
 
   <!-- Toggle de tema -->
@@ -42,7 +44,8 @@
       <div class="modal-header">
         <h3 id="modal-titulo-caso">Título do Chamado</h3>
         <div class="modal-header-actions">
-          <button class="btn-icon-copy" onclick="copiarConteudoCasoModal()" aria-label="Copiar conteúdo" title="Copiar título e descrição">
+          <button class="btn-icon-copy" onclick="copiarConteudoCasoModal()" aria-label="Copiar conteúdo"
+            title="Copiar título e descrição">
             <i class="fa-regular fa-copy"></i>
           </button>
           <button class="btn-close-modal" onclick="fecharModalCaso()" aria-label="Fechar">
@@ -123,7 +126,8 @@
   <div id="modal-roteiros" class="modal-overlay" role="dialog" aria-modal="true">
     <div class="modal-card">
       <div class="modal-header">
-        <h3><i class="fa-solid fa-bolt" style="color:var(--warning);"></i> Roteiros rápidos (<span id="count-roteiros">0</span>)</h3>
+        <h3><i class="fa-solid fa-bolt" style="color:var(--warning);"></i> Roteiros rápidos (<span
+            id="count-roteiros">0</span>)</h3>
         <div class="modal-header-actions">
           <button class="btn-close-modal" onclick="fecharModalRoteiros()" aria-label="Fechar">
             <i class="fa-solid fa-xmark"></i>
@@ -140,14 +144,33 @@
           <input type="text" id="roteiro-titulo-input" placeholder="Ex: Erro de agendamento">
         </div>
         <div class="input-group">
+          <label><i class="fa-solid fa-tags"></i> Categorias de Exibição</label>
+          <div
+            style="display:flex; gap:16px; margin-top:6px; background:var(--surface-alt); padding:10px 14px; border-radius:var(--radius-sm); border:1px solid var(--border);">
+            <label
+              style="display:inline-flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-weight:normal;">
+              <input type="checkbox" id="roteiro-cat-retencao" value="retencao"> Retenção
+            </label>
+            <label
+              style="display:inline-flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-weight:normal;">
+              <input type="checkbox" id="roteiro-cat-sac" value="sac"> SAC / Suporte
+            </label>
+          </div>
+          <span style="font-size:0.75rem; color:var(--text-muted); display:block; margin-top:4px;">
+            Se nenhuma for marcada, o roteiro aparecerá em "Todos". Marque ambas para exibir nos dois setores.
+          </span>
+        </div>
+        <div class="input-group">
           <label>Texto que preenche o formulário</label>
-          <textarea id="roteiro-texto-input" placeholder="Texto que será inserido no título/descrição do chamado..."></textarea>
+          <textarea id="roteiro-texto-input"
+            placeholder="Texto que será inserido no título/descrição do chamado..."></textarea>
         </div>
         <div style="display:flex; gap:10px; margin-bottom:20px;">
           <button id="btn-salvar-roteiro" onclick="salvarRoteiroMonitorMock()" class="btn-success" style="margin:0;">
             <i class="fa-solid fa-plus"></i> Adicionar roteiro
           </button>
-          <button id="btn-cancelar-edicao-roteiro" onclick="cancelarEdicaoRoteiroMock()" class="btn-secondary" style="display:none; margin:0;">
+          <button id="btn-cancelar-edicao-roteiro" onclick="cancelarEdicaoRoteiroMock()" class="btn-secondary"
+            style="display:none; margin:0;">
             <i class="fa-solid fa-xmark"></i> Cancelar edição
           </button>
         </div>
@@ -185,7 +208,8 @@
           <span id="aviso-rh-hora"></span>
         </div>
         <div class="modal-description-box">
-          <p style="margin:0 0 10px;"><i class="fa-solid fa-location-dot"></i> Compareça a: <strong id="aviso-rh-local"></strong></p>
+          <p style="margin:0 0 10px;"><i class="fa-solid fa-location-dot"></i> Compareça a: <strong
+              id="aviso-rh-local"></strong></p>
           <p id="aviso-rh-mensagem" style="margin:0;"></p>
         </div>
         <button id="modal-btn-confirmar-aviso-rh" class="btn-success" style="margin-top:18px;">
@@ -248,7 +272,8 @@
       <div class="login-card">
         <div>
           <h3><i class="fa-solid fa-file-signature" style="color:var(--warning);"></i> Portal do RH</h3>
-          <p>Chame um operador até a sala do RH para assinatura de folhas, férias, advertências e outros comunicados.</p>
+          <p>Chame um operador até a sala do RH para assinatura de folhas, férias, advertências e outros comunicados.
+          </p>
         </div>
         <button onclick="irPara('tela-login-rh')" class="btn-secondary">
           Acessar como RH <i class="fa-solid fa-arrow-right"></i>
@@ -293,7 +318,8 @@
       <label>Senha de acesso</label>
       <div class="password-field-wrapper">
         <input type="password" id="monitor-senha-login" placeholder="Digite a senha padrão">
-        <button type="button" class="btn-toggle-senha" onclick="alternarVisibilidadeSenha('monitor-senha-login', this)" aria-label="Mostrar senha">
+        <button type="button" class="btn-toggle-senha" onclick="alternarVisibilidadeSenha('monitor-senha-login', this)"
+          aria-label="Mostrar senha">
           <i class="fa-solid fa-eye"></i>
         </button>
       </div>
@@ -318,7 +344,8 @@
       <label>Senha administrativa</label>
       <div class="password-field-wrapper">
         <input type="password" id="admin-senha-login" placeholder="Digite a senha">
-        <button type="button" class="btn-toggle-senha" onclick="alternarVisibilidadeSenha('admin-senha-login', this)" aria-label="Mostrar senha">
+        <button type="button" class="btn-toggle-senha" onclick="alternarVisibilidadeSenha('admin-senha-login', this)"
+          aria-label="Mostrar senha">
           <i class="fa-solid fa-eye"></i>
         </button>
       </div>
@@ -348,7 +375,8 @@
       <label>Senha de acesso</label>
       <div class="password-field-wrapper">
         <input type="password" id="rh-senha-login" placeholder="Digite a senha do RH">
-        <button type="button" class="btn-toggle-senha" onclick="alternarVisibilidadeSenha('rh-senha-login', this)" aria-label="Mostrar senha">
+        <button type="button" class="btn-toggle-senha" onclick="alternarVisibilidadeSenha('rh-senha-login', this)"
+          aria-label="Mostrar senha">
           <i class="fa-solid fa-eye"></i>
         </button>
       </div>
@@ -417,7 +445,8 @@
       <div class="section-monitor-fluid">
         <h3><i class="fa-solid fa-trash-can" style="color:var(--danger);"></i> Apagar casos concluídos</h3>
         <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
-          Esta ação remove permanentemente do banco apenas os casos com status <strong>Concluído</strong> dentro do período selecionado. Casos pendentes ou em tratativa <strong>nunca</strong> são apagados.
+          Esta ação remove permanentemente do banco apenas os casos com status <strong>Concluído</strong> dentro do
+          período selecionado. Casos pendentes ou em tratativa <strong>nunca</strong> são apagados.
         </p>
 
         <div class="report-controls">
@@ -470,7 +499,8 @@
         </div>
         <div class="input-group">
           <label>Mensagem (até 600 caracteres)</label>
-          <textarea id="admin-notif-msg" maxlength="600" placeholder="Ex: Sistema do CRM ficará indisponível das 14h às 14h30 para manutenção."></textarea>
+          <textarea id="admin-notif-msg" maxlength="600"
+            placeholder="Ex: Sistema do CRM ficará indisponível das 14h às 14h30 para manutenção."></textarea>
         </div>
         <button onclick="enviarNotificacaoAdminMock()" class="btn-success">
           <i class="fa-solid fa-bullhorn"></i> Transmitir para todos os operadores
@@ -523,7 +553,8 @@
         <input type="text" id="rh-aviso-operador" placeholder="Ex: Maria Souza">
       </div>
 
-      <button type="button" id="btn-limpar-selecao-rh" class="btn-secondary" style="display:none; margin-bottom:14px;" onclick="limparSelecaoOperadorRH()">
+      <button type="button" id="btn-limpar-selecao-rh" class="btn-secondary" style="display:none; margin-bottom:14px;"
+        onclick="limparSelecaoOperadorRH()">
         <i class="fa-solid fa-xmark"></i> Limpar seleção e digitar manualmente
       </button>
 
@@ -563,7 +594,8 @@
         <label>Nome completo do operador</label>
         <input type="text" id="op-nome" placeholder="Ex: Maria Souza">
         <span style="display:block; margin-top:4px; font-size:0.78rem; color:var(--text-muted);">
-          <i class="fa-solid fa-circle-info"></i> Use seu nome completo — evita confusão para o RH e monitoria quando há operadores com o mesmo primeiro nome.
+          <i class="fa-solid fa-circle-info"></i> Use seu nome completo — evita confusão para o RH e monitoria quando há
+          operadores com o mesmo primeiro nome.
         </span>
       </div>
       <div class="input-group">
@@ -579,7 +611,12 @@
           <i class="fa-solid fa-headset" style="color:var(--primary);"></i> Terminal do operador
         </h2>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn-bell" id="btn-bell-notif" onclick="abrirModalNotificacoes()" aria-label="Comunicados" title="Comunicados">
+          <button type="button" class="btn-deskontinho" onclick="window.open('gerador-oferta.html', '_blank')"
+            title="Abrir Gerador de Ofertas">
+            <i class="fa-solid fa-tag"></i> DESKontinho TOP
+          </button>
+          <button class="btn-bell" id="btn-bell-notif" onclick="abrirModalNotificacoes()" aria-label="Comunicados"
+            title="Comunicados">
             <i class="fa-solid fa-bell"></i>
             <span id="bell-badge" class="bell-badge" style="display:none;">0</span>
           </button>
@@ -605,16 +642,34 @@
       <div id="alerta-suporte-operador" style="display:none; margin-bottom:14px;"></div>
 
       <div class="monitors-status-wrapper">
-        <label style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
+        <label
+          style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
           <i class="fa-solid fa-users-viewfinder"></i> Equipe de monitoria online
         </label>
         <div class="monitors-grid" id="grid-monitores-online"></div>
       </div>
 
       <div class="shortcuts-wrapper">
-        <label style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
+        <label
+          style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
           <i class="fa-solid fa-bolt"></i> Roteiros rápidos
         </label>
+
+        <!-- Abas para filtrar por setor -->
+        <div class="category-tabs" style="display:flex; gap:8px; margin-bottom:12px;">
+          <button type="button" id="tab-cat-todos" class="btn-shortcut active"
+            onclick="filtrarRoteirosOperador('todos')">
+            <i class="fa-solid fa-border-all"></i> Todos
+          </button>
+          <button type="button" id="tab-cat-retencao" class="btn-shortcut"
+            onclick="filtrarRoteirosOperador('retencao')">
+            <i class="fa-solid fa-handshake"></i> Retenção
+          </button>
+          <button type="button" id="tab-cat-sac" class="btn-shortcut" onclick="filtrarRoteirosOperador('sac')">
+            <i class="fa-solid fa-headset"></i> SAC / Suporte
+          </button>
+        </div>
+
         <div class="shortcuts-container" id="grid-roteiros-operador"></div>
       </div>
 
@@ -677,8 +732,10 @@
       <div style="display:flex; align-items:center; gap:10px;">
         <span style="font-size:0.8rem; color:var(--text-muted);">Status:</span>
         <div class="status-selector">
-          <button id="status-opt-disp" class="status-opt active-disp" onclick="alterarStatusMonitorMock('Disponível')">Disponível</button>
-          <button id="status-opt-np" class="status-opt" onclick="alterarStatusMonitorMock('Não Perturbe')">Indisponível</button>
+          <button id="status-opt-disp" class="status-opt active-disp"
+            onclick="alterarStatusMonitorMock('Disponível')">Disponível</button>
+          <button id="status-opt-np" class="status-opt"
+            onclick="alterarStatusMonitorMock('Não Perturbe')">Indisponível</button>
         </div>
       </div>
     </div>
@@ -705,7 +762,8 @@
 
     <div class="filter-bar">
       <div style="flex:1;">
-        <input type="text" id="search-input" oninput="renderizarTudo()" placeholder="🔍  Pesquisar por operador, PA ou descrição...">
+        <input type="text" id="search-input" oninput="renderizarTudo()"
+          placeholder="🔍  Pesquisar por operador, PA ou descrição...">
       </div>
       <div style="min-width:240px;">
         <select id="filter-direcionamento" onchange="renderizarTudo()">
@@ -734,7 +792,8 @@
 
     <div class="section-monitor-fluid archive-section">
       <div class="archive-header" onclick="toggleArquivoRetratil()">
-        <h3><i class="fa-solid fa-box-archive" style="color:var(--text-muted);"></i> Histórico de casos solucionados (<span id="count-arquivados">0</span>)</h3>
+        <h3><i class="fa-solid fa-box-archive" style="color:var(--text-muted);"></i> Histórico de casos solucionados
+          (<span id="count-arquivados">0</span>)</h3>
         <i id="archive-arrow" class="fa-solid fa-chevron-down"></i>
       </div>
       <div id="container-arquivo-retratil" class="archive-body-content">
@@ -765,15 +824,18 @@
           <textarea id="monitor-aviso-mensagem" placeholder="Digite aqui a mensagem detalhada..."></textarea>
         </div>
         <div style="display:flex; gap:10px;">
-          <button id="btn-enviar-aviso-monitor" onclick="enviarAvisoMonitorMock()" class="btn-success" style="flex:1; width:auto; margin:0;">
-          <i class="fa-solid fa-paper-plane"></i> Transmitir para todos
+          <button id="btn-enviar-aviso-monitor" onclick="enviarAvisoMonitorMock()" class="btn-success"
+            style="flex:1; width:auto; margin:0;">
+            <i class="fa-solid fa-paper-plane"></i> Transmitir para todos
           </button>
-          <button id="btn-cancelar-edicao-aviso-mon" onclick="cancelarEdicaoAvisoMonitor()" class="btn-secondary" style="display:none; flex:1; width:auto; margin:0;">
+          <button id="btn-cancelar-edicao-aviso-mon" onclick="cancelarEdicaoAvisoMonitor()" class="btn-secondary"
+            style="display:none; flex:1; width:auto; margin:0;">
             <i class="fa-solid fa-xmark"></i> Cancelar edição
           </button>
         </div>
 
-        <h3 style="margin-top:24px; font-size:1rem;"><i class="fa-solid fa-clock-rotate-left"></i> Comunicados ativos (<span id="count-avisos-monitor">0</span>)</h3>
+        <h3 style="margin-top:24px; font-size:1rem;"><i class="fa-solid fa-clock-rotate-left"></i> Comunicados ativos
+          (<span id="count-avisos-monitor">0</span>)</h3>
         <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px;">
           Os comunicados ficam visíveis para a equipe de operadores até serem removidos aqui.
         </p>
@@ -794,34 +856,34 @@
     } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     const firebaseConfig = {
-      apiKey:            "AIzaSyB6WQibm5djPFYHUjuW8G8XZENzofVA5eA",
-      authDomain:        "suppaciente-testes.firebaseapp.com",
-      databaseURL:       "https://suppaciente-testes-default-rtdb.firebaseio.com",
-      projectId:         "suppaciente-testes",
-      storageBucket:     "suppaciente-testes.firebasestorage.app",
+      apiKey: "AIzaSyB6WQibm5djPFYHUjuW8G8XZENzofVA5eA",
+      authDomain: "suppaciente-testes.firebaseapp.com",
+      databaseURL: "https://suppaciente-testes-default-rtdb.firebaseio.com",
+      projectId: "suppaciente-testes",
+      storageBucket: "suppaciente-testes.firebasestorage.app",
       messagingSenderId: "86414407394",
-      appId:             "1:86414407394:web:4f98ba9dc3f2547f0f90bb",
-      measurementId:     "G-7T2WVE075N",
+      appId: "1:86414407394:web:4f98ba9dc3f2547f0f90bb",
+      measurementId: "G-7T2WVE075N",
     };
 
     const app = initializeApp(firebaseConfig);
-    const db  = getDatabase(app);
+    const db = getDatabase(app);
 
-    window.fbDB             = db;
-    window.fbRef            = ref;
-    window.fbSet            = set;
-    window.fbRemove         = remove;
-    window.fbOnValue        = onValue;
-    window.fbOnChildAdded   = onChildAdded;
+    window.fbDB = db;
+    window.fbRef = ref;
+    window.fbSet = set;
+    window.fbRemove = remove;
+    window.fbOnValue = onValue;
+    window.fbOnChildAdded = onChildAdded;
     window.fbOnChildChanged = onChildChanged;
     window.fbOnChildRemoved = onChildRemoved;
-    window.fbOnDisconnect   = onDisconnect;
-    window.fbUpdate         = update;
-    window.fbQuery          = query;
-    window.fbOrderByChild   = orderByChild;
-    window.fbLimitToLast    = limitToLast;
-    window.fbGet            = get;
-    window.fbStartAt        = startAt;
+    window.fbOnDisconnect = onDisconnect;
+    window.fbUpdate = update;
+    window.fbQuery = query;
+    window.fbOrderByChild = orderByChild;
+    window.fbLimitToLast = limitToLast;
+    window.fbGet = get;
+    window.fbStartAt = startAt;
 
     if (typeof window.inicializarSincronismoFirebase === "function") {
       window.inicializarSincronismoFirebase();
@@ -830,4 +892,5 @@
 
   <script src="script.js"></script>
 </body>
+
 </html>
