@@ -746,42 +746,71 @@ window.aplicarRoteiroDinamico = function (id) {
   window.lancarToast("Roteiro rápido inserido no formulário.", "info");
 };
 
-let categoriaRoteiroAtiva = 'todos';
+let setorAtivoPainel = null;
 
-window.filtrarRoteirosOperador = function (categoria) {
-  categoriaRoteiroAtiva = categoria;
+window.togglePainelSetor = function (setor) {
+  const painel = document.getElementById("painel-atalhos-expansivel");
+  const btnRet = document.getElementById("btn-sec-retencao");
+  const btnSac = document.getElementById("btn-sec-sac");
+  const titulo = document.getElementById("titulo-setor-painel");
 
-  document.getElementById("tab-cat-todos")?.classList.toggle("active", categoria === 'todos');
-  document.getElementById("tab-cat-retencao")?.classList.toggle("active", categoria === 'retencao');
-  document.getElementById("tab-cat-sac")?.classList.toggle("active", categoria === 'sac');
+  if (setorAtivoPainel === setor && painel.style.display === "block") {
+    fecharPainelAtalhos();
+    return;
+  }
+
+  setorAtivoPainel = setor;
+  painel.style.display = "block";
+
+  btnRet?.classList.toggle("active", setor === "retencao");
+  btnSac?.classList.toggle("active", setor === "sac");
+
+  if (titulo) {
+    titulo.innerHTML = setor === "retencao"
+      ? '<i class="fa-solid fa-handshake"></i> Atalhos do Setor de Retenção'
+      : '<i class="fa-solid fa-headset"></i> Atalhos do Setor de SAC / Suporte';
+  }
 
   renderizarRoteirosOperador();
 };
 
+window.fecharPainelAtalhos = function () {
+  const painel = document.getElementById("painel-atalhos-expansivel");
+  if (painel) painel.style.display = "none";
+  setorAtivoPainel = null;
+
+  document.getElementById("btn-sec-retencao")?.classList.remove("active");
+  document.getElementById("btn-sec-sac")?.classList.remove("active");
+};
+
 function renderizarRoteirosOperador() {
   const cont = document.getElementById("grid-roteiros-operador");
-  if (!cont) return;
+  if (!cont || !setorAtivoPainel) return;
   if (localDB.roteiros_rapidos.length === 0) {
-    cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum roteiro disponível.</div>`;
+    cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; font-style:italic; padding:10px;">Nenhum roteiro cadastrado no sistema.</div>`;
     return;
   }
 
   const filtrados = localDB.roteiros_rapidos.filter(r => {
-    if (categoriaRoteiroAtiva === 'todos') return true;
     const categorias = r.categorias || [];
     if (categorias.length === 0) return true;
-    return categorias.includes(categoriaRoteiroAtiva);
+    return categorias.includes(setorAtivoPainel);
   });
 
   if (filtrados.length === 0) {
-    cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum atalho nesta categoria.</div>`;
+    cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; font-style:italic; padding:10px;">Nenhum atalho cadastrado para este setor.</div>`;
     return;
   }
 
   cont.innerHTML = filtrados.map(r =>
-    `<button class="btn-shortcut" onclick="aplicarRoteiroDinamico('${escapeHtml(r.id)}')">${escapeHtml(r.titulo)}</button>`
+    `<button class="btn-shortcut" onclick="aplicarRoteiroEErro('${escapeHtml(r.id)}')">${escapeHtml(r.titulo)}</button>`
   ).join("");
 }
+
+window.aplicarRoteiroEErro = function (id) {
+  aplicarRoteiroDinamico(id);
+  fecharPainelAtalhos();
+};
 
 // --------------------------------------------------------------------------
 // GERENCIAMENTO DOS ROTEIROS (MONITOR)

@@ -650,27 +650,32 @@
       </div>
 
       <div class="shortcuts-wrapper">
-        <label
-          style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
-          <i class="fa-solid fa-bolt"></i> Roteiros rápidos
+        <label style="font-size:0.78rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em; display:block; margin-bottom:10px;">
+          <i class="fa-solid fa-bolt"></i> Roteiros Rápidos
         </label>
 
-        <!-- Abas para filtrar por setor -->
-        <div class="category-tabs" style="display:flex; gap:8px; margin-bottom:12px;">
-          <button type="button" id="tab-cat-todos" class="btn-shortcut active"
-            onclick="filtrarRoteirosOperador('todos')">
-            <i class="fa-solid fa-border-all"></i> Todos
-          </button>
-          <button type="button" id="tab-cat-retencao" class="btn-shortcut"
-            onclick="filtrarRoteirosOperador('retencao')">
+        <!-- Botões Principais dos Setores -->
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <button type="button" class="btn-sector-trigger" id="btn-sec-retencao" onclick="togglePainelSetor('retencao')">
             <i class="fa-solid fa-handshake"></i> Retenção
+            <i class="fa-solid fa-chevron-down arrow-icon"></i>
           </button>
-          <button type="button" id="tab-cat-sac" class="btn-shortcut" onclick="filtrarRoteirosOperador('sac')">
+          <button type="button" class="btn-sector-trigger" id="btn-sec-sac" onclick="togglePainelSetor('sac')">
             <i class="fa-solid fa-headset"></i> SAC / Suporte
+            <i class="fa-solid fa-chevron-down arrow-icon"></i>
           </button>
         </div>
 
-        <div class="shortcuts-container" id="grid-roteiros-operador"></div>
+        <!-- Painel expansível contendo os atalhos da categoria selecionada -->
+        <div id="painel-atalhos-expansivel" class="shortcuts-panel-popover" style="display:none;">
+          <div class="shortcuts-panel-header">
+            <span id="titulo-setor-painel"><i class="fa-solid fa-folder-open"></i> Atalhos</span>
+            <button type="button" class="btn-close-popover" onclick="fecharPainelAtalhos()" title="Fechar">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <div class="shortcuts-container" id="grid-roteiros-operador"></div>
+        </div>
       </div>
 
       <div class="input-group">
